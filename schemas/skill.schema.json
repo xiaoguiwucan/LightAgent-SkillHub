@@ -32,9 +32,8 @@
     },
     "lightagent": {
       "type": "object",
-      "required": ["risk_level", "network_domains", "file_paths", "tools", "docker_notes"],
+      "required": ["network_domains", "file_paths", "tools", "docker_notes"],
       "properties": {
-        "risk_level": {"enum": ["low", "medium", "high"]},
         "network_domains": {"type": "array", "items": {"type": "string"}},
         "file_paths": {"type": "array", "items": {"type": "string"}},
         "tools": {"type": "array", "items": {"type": "string"}},

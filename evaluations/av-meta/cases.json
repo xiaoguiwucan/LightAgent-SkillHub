@@ -3,7 +3,9 @@
     "name": "单番号查询",
     "prompt": "请查一下 SSIS-001 的标题、演员、封面和磁力。",
     "must_contain": ["SSIS-001", "番号", "标题"],
-    "must_not_contain": ["完整 JSON", "批量"]
+    "must_not_contain": ["完整 JSON", "批量"],
+    "must_use_tools": ["read", "bash", "send"],
+    "must_not_use_tools": ["browser", "web_fetch"]
   },
   {
     "name": "无番号不调用工具",

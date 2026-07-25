@@ -1,0 +1,8 @@
+[
+  {
+    "name": "报告版本",
+    "prompt": "请确认技能中心示例技能是否已经正常安装。",
+    "must_contain": ["hello-lightagent", "1.0.0"],
+    "must_not_contain": ["API_KEY", "TOKEN="]
+  }
+]

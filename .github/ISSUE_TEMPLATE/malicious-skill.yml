@@ -1,0 +1,26 @@
+name: 恶意技能举报
+description: 举报可疑、失陷或与声明权限不符的技能
+title: "[恶意技能] "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: 如果细节可以直接被利用，请停止填写并改用 GitHub Security Advisory 私密报告。
+  - type: input
+    id: skill
+    attributes:
+      label: 技能与版本
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 可疑行为与影响
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 非敏感证据
+    validations:
+      required: true

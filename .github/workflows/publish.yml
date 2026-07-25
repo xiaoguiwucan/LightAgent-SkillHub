@@ -1,0 +1,35 @@
+name: 发布注册表
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["skills/**", "site/**", "scripts/**", "schemas/**", "revocations.json"]
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency: {group: pages, cancel-in-progress: true}
+jobs:
+  publish:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements-dev.txt
+      - run: python scripts/validate.py
+      - run: python scripts/build_registry.py --output dist --require-signature
+        env:
+          SKILL_HUB_SIGNING_KEY: ${{ secrets.SKILL_HUB_SIGNING_KEY }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: dist}
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - run: gh release create "registry-${GITHUB_SHA::12}" dist/packages/* dist/registry.json dist/registry.sha256 --title "技能注册表 ${GITHUB_SHA::12}" --notes "由主分支自动生成的确定性技能包与签名索引。"
+        env:
+          GH_TOKEN: ${{ github.token }}

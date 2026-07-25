@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LightAgent Skill Metadata",
+  "type": "object",
+  "required": ["name", "version", "description", "author", "license", "homepage", "repository", "min_lightagent_version", "platforms", "category", "tags", "requirements", "lightagent"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"},
+    "description": {"type": "string", "minLength": 10, "maxLength": 500},
+    "author": {"type": "string", "minLength": 1},
+    "license": {"type": "string", "minLength": 2},
+    "homepage": {"type": "string", "pattern": "^https://"},
+    "repository": {"type": "string", "pattern": "^https://"},
+    "min_lightagent_version": {"type": "string"},
+    "max_lightagent_version": {"type": ["string", "null"]},
+    "platforms": {"type": "array", "minItems": 1, "items": {"enum": ["linux", "darwin", "windows"]}, "uniqueItems": true},
+    "category": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,31}$"},
+    "tags": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+    "status": {"enum": ["active", "deprecated", "yanked", "revoked"]},
+    "publisher": {"enum": ["official", "verified", "community"]},
+    "requirements": {
+      "type": "object",
+      "required": ["env", "bins", "python", "npm", "downloads"],
+      "properties": {
+        "env": {"type": "array", "items": {"type": "string"}},
+        "bins": {"type": "array", "items": {"type": "string"}},
+        "python": {"type": "array", "items": {"type": "string"}},
+        "npm": {"type": "array", "items": {"type": "string"}},
+        "downloads": {"type": "array", "items": {"type": "object", "required": ["url", "sha256"], "properties": {"url": {"type": "string", "pattern": "^https://"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}}}
+      },
+      "additionalProperties": false
+    },
+    "lightagent": {
+      "type": "object",
+      "required": ["risk_level", "network_domains", "file_paths", "tools", "docker_notes"],
+      "properties": {
+        "risk_level": {"enum": ["low", "medium", "high"]},
+        "network_domains": {"type": "array", "items": {"type": "string"}},
+        "file_paths": {"type": "array", "items": {"type": "string"}},
+        "tools": {"type": "array", "items": {"type": "string"}},
+        "docker_notes": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

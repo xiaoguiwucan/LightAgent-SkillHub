@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LightAgent Skill Hub</title>
+  <meta name="description" content="LightAgent 官方技能中心">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="./">LightAgent <span>Skill Hub</span></a>
+    <a href="https://github.com/xiaoguiwucan/LightAgent-SkillHub">GitHub</a>
+  </header>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">OFFICIAL REGISTRY</p>
+      <h1>LightAgent 技能中心</h1>
+      <p>社区技能经过结构校验、风险声明和维护者审核后发布。安装前请检查依赖与权限范围。</p>
+    </section>
+    <section class="toolbar" aria-label="技能筛选">
+      <input id="search" type="search" placeholder="搜索技能、标签或作者" autocomplete="off">
+      <select id="risk"><option value="">全部风险等级</option><option value="low">低风险</option><option value="medium">中风险</option><option value="high">高风险</option></select>
+    </section>
+    <p id="status" role="status">正在加载注册表...</p>
+    <section id="skills" class="skills" aria-live="polite"></section>
+  </main>
+  <template id="skill-template"><article><div class="title"><h2></h2><span class="risk"></span></div><p class="description"></p><div class="meta"></div><code></code><a class="details">查看源码</a></article></template>
+  <script src="app.js"></script>
+</body>
+</html>

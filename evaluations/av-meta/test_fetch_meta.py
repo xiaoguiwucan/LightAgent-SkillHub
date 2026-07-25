@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "skills" / "av-meta" / "scripts" / "fetch_meta.py"
+SKILL = SCRIPT.parent.parent / "SKILL.md"
 SPEC = importlib.util.spec_from_file_location("av_meta_fetch", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -15,6 +16,12 @@ SPEC.loader.exec_module(MODULE)
 
 
 class AvMetaFetchTest(unittest.TestCase):
+    def test_skill_metadata_requires_script_path_for_explicit_code(self):
+        text = SKILL.read_text(encoding="utf-8")
+        self.assertIn("version: 1.0.2", text)
+        self.assertIn("必须读取本技能并执行 scripts/fetch_meta.py", text)
+        self.assertIn("禁止改用 browser、web_fetch", text)
+
     def test_normalize_code_accepts_explicit_code_only(self):
         self.assertEqual("SSIS-001", MODULE.normalize_code("ssis_001"))
         self.assertEqual("IPX-177", MODULE.normalize_code("请查 IPX177"))

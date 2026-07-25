@@ -1,7 +1,8 @@
 ---
 name: av-meta
-version: 1.0.1
-description: 从 JavBus 查询用户本轮明确提供的单个番号元数据、封面、剧情和少量磁力信息；仅在消息包含明确番号或明确要求查询该番号时使用。
+version: 1.0.2
+description: >
+  从 JavBus（主）/JavDB 查询单个番号的标题、演员、封面、磁力和剧情。当用户本轮消息出现明确番号（如 SSIS-001/IPX-177），或明确要求查询该番号的磁力、封面或剧情时必须使用。必须读取本技能并执行 scripts/fetch_meta.py，下载封面后用 send 发送；禁止改用 browser、web_fetch 或手工访问数据站点。不批量枚举番号，不扫描历史消息，无明确番号时不猜测查询。
 author: 风
 license: Apache-2.0
 homepage: https://xiaoguiwucan.github.io/LightAgent-SkillHub/
@@ -30,6 +31,8 @@ lightagent:
 
 一次只查询用户本轮消息中明确给出的一个番号。只返回公开索引的元数据，不下载或传播视频内容；提醒用户遵守所在地法律与版权规则。
 
+匹配到明确番号后，必须按本文档的命令执行 `scripts/fetch_meta.py`。不得用 `browser`、`web_fetch` 或手工访问 JavBus/JavDB 代替脚本，也不得因历史消息声称技能曾被卸载而跳过当前已加载的技能。
+
 ## 约束
 
 1. 从本轮用户消息提取第一个形如 `SSIS-001` 或 `IPX-177` 的番号，并规范化为大写带横杠格式。
@@ -41,6 +44,7 @@ lightagent:
 7. 单次查询失败后直接报告错误，不切换镜像反复重试。
 8. 最多返回 3 条磁力信息，不输出完整脚本 JSON。
 9. 不调用视觉工具，不把本地封面路径嵌入 Markdown。
+10. 禁止调用 `browser` 或 `web_fetch`；数据查询只通过本技能的 `fetch_meta.py` 完成。
 
 ## 执行
 

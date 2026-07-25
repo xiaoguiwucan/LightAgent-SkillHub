@@ -1,0 +1,23 @@
+name: 版权或下架请求
+description: 申请下架未授权代码、素材或其他侵权内容
+title: "[下架请求] "
+labels: ["takedown"]
+body:
+  - type: input
+    id: skill
+    attributes:
+      label: 技能、版本与路径
+    validations:
+      required: true
+  - type: textarea
+    id: rights
+    attributes:
+      label: 权利归属与证明
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: 要求的处理方式
+    validations:
+      required: true

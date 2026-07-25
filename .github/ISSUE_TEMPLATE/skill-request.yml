@@ -1,0 +1,17 @@
+name: 技能需求
+description: 建议新增或改进一个技能
+title: "[技能需求] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+    validations:
+      required: true

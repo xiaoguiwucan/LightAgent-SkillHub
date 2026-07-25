@@ -49,7 +49,7 @@ def sign(payload: bytes):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="dist")
-    parser.add_argument("--base-url", default="https://yideng966.github.io/LightAgent-SkillHub")
+    parser.add_argument("--base-url", default="https://xiaoguiwucan.github.io/LightAgent-SkillHub")
     parser.add_argument("--require-signature", action="store_true")
     args = parser.parse_args()
     output = ROOT / args.output
@@ -75,7 +75,7 @@ def main():
 
     registry = {
         "registry_version": 1,
-        "repository": "https://github.com/yideng966/LightAgent-SkillHub",
+        "repository": "https://github.com/xiaoguiwucan/LightAgent-SkillHub",
         "source_commit": commit,
         "skills": skills,
         "revocations": json.loads((ROOT / "revocations.json").read_text(encoding="utf-8")),

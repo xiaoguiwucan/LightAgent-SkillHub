@@ -2,6 +2,9 @@
 
 LightAgent 官方技能中心。技能通过 GitHub Pull Request 投稿，经自动校验和维护者审核后发布为可校验的静态注册表，不收集安装遥测。
 
+- 源码仓库：https://github.com/xiaoguiwucan/LightAgent-SkillHub
+- 技能目录：https://xiaoguiwucan.github.io/LightAgent-SkillHub/
+
 ## 使用
 
 ```bash

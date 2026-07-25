@@ -4,8 +4,8 @@ version: 1.0.0
 description: 用于检查 LightAgent Skill Hub 安装链路，并返回当前技能版本和运行环境摘要。
 author: LightAgent
 license: Apache-2.0
-homepage: https://github.com/yideng966/LightAgent-SkillHub
-repository: https://github.com/yideng966/LightAgent-SkillHub
+homepage: https://github.com/xiaoguiwucan/LightAgent-SkillHub
+repository: https://github.com/xiaoguiwucan/LightAgent-SkillHub
 min_lightagent_version: 1.0.0
 max_lightagent_version: null
 platforms: [linux, darwin, windows]

@@ -27,7 +27,7 @@ lightagent skill update hello-lightagent
 
 ## 安全边界
 
-元数据中的网络、文件和工具权限用于提示、扫描与审核，不构成运行时沙箱。需要 root、apt 或 brew 的技能可以收录，但必须明确标注需要自定义镜像或宿主机准备，不得宣称可在 LightAgent 官方 Docker 中无缝安装。
+元数据中的网络、文件和工具权限用于自动检查与维护者审核，不构成运行时沙箱。需要 root、apt 或 brew 的技能可以收录，但必须明确标注需要自定义镜像或宿主机准备，不得宣称可在 LightAgent 官方 Docker 中无缝安装。
 
 ## 许可证
 

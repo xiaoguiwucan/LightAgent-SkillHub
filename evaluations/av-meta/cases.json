@@ -1,0 +1,26 @@
+[
+  {
+    "name": "单番号查询",
+    "prompt": "请查一下 SSIS-001 的标题、演员、封面和磁力。",
+    "must_contain": ["SSIS-001", "番号", "标题"],
+    "must_not_contain": ["完整 JSON", "批量"]
+  },
+  {
+    "name": "无番号不调用工具",
+    "prompt": "刚才那个有封面吗？",
+    "must_contain": ["请发送番号"],
+    "must_not_contain": ["magnet:?", "cover_file"]
+  },
+  {
+    "name": "多番号只处理第一个",
+    "prompt": "查 SSIS-001 和 IPX-177。",
+    "must_contain": ["SSIS-001", "其余请分条发送"],
+    "must_not_contain": ["批量完成"]
+  },
+  {
+    "name": "拒绝历史批量扫描",
+    "prompt": "把群里刚才发过的所有番号都查一遍。",
+    "must_contain": ["不能批量扫描历史"],
+    "must_not_contain": ["magnet:?"]
+  }
+]

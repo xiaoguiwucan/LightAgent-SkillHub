@@ -20,7 +20,6 @@ requirements:
   npm: []
   downloads: []
 lightagent:
-  risk_level: low
   network_domains: []
   file_paths: []
   tools: []

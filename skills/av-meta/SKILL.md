@@ -1,11 +1,11 @@
 ---
 name: av-meta
-version: 1.0.0
+version: 1.0.1
 description: 从 JavBus 查询用户本轮明确提供的单个番号元数据、封面、剧情和少量磁力信息；仅在消息包含明确番号或明确要求查询该番号时使用。
 author: 风
 license: Apache-2.0
 homepage: https://xiaoguiwucan.github.io/LightAgent-SkillHub/
-repository: https://github.com/xiaoguiwucan/LightAgent-SkillHub/tree/main/skills/av-meta
+repository: https://github.com/xiaoguiwucan/LightAgent-SkillHub
 min_lightagent_version: 2.1.0
 max_lightagent_version: null
 platforms: [linux, darwin]

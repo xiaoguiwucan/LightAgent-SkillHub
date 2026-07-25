@@ -1,0 +1,4 @@
+interface:
+  display_name: "AV Meta"
+  short_description: "查询单个番号的标题、演员、封面、剧情和少量磁力元数据"
+  default_prompt: "使用 $av-meta 查询我提供的单个番号，并返回封面与精简元数据。"

@@ -14,6 +14,8 @@ lightagent skill outdated
 lightagent skill update hello-lightagent
 ```
 
+LightAgent Web 控制台的“技能 -> 获取在线技能”可直接浏览、搜索、安装、检查更新、更新、回滚和卸载。后台只检查更新，不会自动升级。
+
 网页目录由 GitHub Pages 发布，LightAgent 会优先读取该目录，并在不可用时使用最后一次验证通过的缓存或旧技能广场。
 
 ## 投稿
@@ -27,7 +29,9 @@ lightagent skill update hello-lightagent
 
 ## 安全边界
 
-元数据中的网络、文件和工具权限用于自动检查与维护者审核，不构成运行时沙箱。需要 root、apt 或 brew 的技能可以收录，但必须明确标注需要自定义镜像或宿主机准备，不得宣称可在 LightAgent 官方 Docker 中无缝安装。
+Schema v2 脚本技能必须声明结构化 `lightagent.entrypoints`，并通过 LightAgent `skill_run` 调用；不得要求 Agent 用 Bash、Python 或 Node 命令字符串直接启动技能脚本。系统组件使用 `requirements.capabilities` 声明，不得包含运行时 root、apt、brew 或 sudo 安装步骤。
+
+网络、文件和工具字段用于 CI 与人工审核。Skill Runner 第一阶段提供受控子进程、最小环境、路径、超时、输出和资源限制，但不构成完整文件系统或网络沙箱。
 
 ## 许可证
 

@@ -1,5 +1,6 @@
 ---
 name: hello-lightagent
+schema_version: 2
 version: 1.0.0
 description: 用于检查 LightAgent Skill Hub 安装链路，并返回当前技能版本和运行环境摘要。
 author: LightAgent
@@ -19,11 +20,13 @@ requirements:
   python: []
   npm: []
   downloads: []
+  capabilities: []
 lightagent:
   network_domains: []
   file_paths: []
   tools: []
   docker_notes: 可在官方 Docker 非 root 用户环境运行。
+  entrypoints: []
 ---
 
 # Hello LightAgent

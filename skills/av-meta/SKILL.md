@@ -1,6 +1,7 @@
 ---
 name: av-meta
-version: 1.0.2
+schema_version: 2
+version: 1.1.0
 description: >
   从 JavBus（主）/JavDB 查询单个番号的标题、演员、封面、磁力和剧情。当用户本轮消息出现明确番号（如 SSIS-001/IPX-177），或明确要求查询该番号的磁力、封面或剧情时必须使用。必须读取本技能并执行 scripts/fetch_meta.py，下载封面后用 send 发送；禁止改用 browser、web_fetch 或手工访问数据站点。不批量枚举番号，不扫描历史消息，无明确番号时不猜测查询。
 author: 风
@@ -14,17 +15,32 @@ category: media
 tags: [metadata, cover, javbus, javdb, magnet]
 status: active
 publisher: community
+release_notes: 使用结构化 Skill Runner 入口执行查询脚本，避免通过通用 Bash 直接启动技能代码。
+breaking_changes: []
 requirements:
   env: [AV_META_JAVBUS, AV_META_JAVDB_MIRRORS, AV_META_PLOT_BASE]
   bins: [python3]
   python: []
   npm: []
   downloads: []
+  capabilities: []
 lightagent:
   network_domains: [www.javbus.com, javdb.com, www.javdb.com, javdb36.com, javdb39.com, javdb48.com, javdb601.com, javtxt.com, pics.dmm.co.jp]
   file_paths: [<workspace>/images/av-meta]
-  tools: [bash, send]
+  tools: [skill_run, send]
   docker_notes: 可在官方 Docker 非 root 用户环境运行；封面只能写入 LightAgent workspace 下的 images/av-meta 目录。
+  entrypoints:
+    - name: fetch_meta
+      path: scripts/fetch_meta.py
+      runtime: python
+      timeout_seconds: 90
+      max_output_bytes: 262144
+      max_memory_mb: 256
+      max_processes: 8
+      arguments:
+        min_items: 1
+        max_items: 10
+        max_length: 2048
 ---
 
 # AV Meta
@@ -39,7 +55,7 @@ lightagent:
 2. 用户未提供番号时，回复“请发送番号，例如：SSIS-001”，不要调用工具。
 3. 用户一次提供多个番号时，只查询第一个；完成后提示“其余请分条发送”。
 4. 不扫描历史消息，不枚举相邻番号，不循环查询，不根据模糊描述猜测番号。
-5. 正常流程最多调用一次 `bash` 和一次 `send`；包括失败处理在内，工具调用总数不得超过 3 次。
+5. 正常流程最多调用一次 `skill_run` 和一次 `send`；包括失败处理在内，工具调用总数不得超过 3 次。
 6. 默认只使用 JavBus。只有用户明确要求 JavDB 时才使用 `--source both`。
 7. 单次查询失败后直接报告错误，不切换镜像反复重试。
 8. 最多返回 3 条磁力信息，不输出完整脚本 JSON。
@@ -48,13 +64,12 @@ lightagent:
 
 ## 执行
 
-默认使用以下唯一推荐命令，超时设置为 90 秒：
+默认调用 `skill_run` 的 `fetch_meta` 入口，超时由入口固定为 90 秒。参数按以下顺序传入：
 
-```bash
-mkdir -p "<workspace>/images/av-meta" && python3 "<base_dir>/scripts/fetch_meta.py" "<CODE>" --source javbus --limit-magnets 3 --output-root "<workspace>" --download-cover "<workspace>/images/av-meta/<CODE>.jpg"
+```json
+{"skill_name":"av-meta","entrypoint":"fetch_meta","arguments":["<CODE>","--source","javbus","--limit-magnets","3","--output-root","<workspace>","--download-cover","<workspace>/images/av-meta/<CODE>.jpg"]}
 ```
 
-- `<base_dir>` 是当前技能目录。
 - `<workspace>` 是 LightAgent workspace；官方 Docker 默认为 `/home/agent/lightagent`。
 - `<CODE>` 是规范化后的单个番号。
 

@@ -66,6 +66,10 @@ def main():
         package_name = f"{meta['name']}-{meta['version']}.zip"
         (output / "packages" / package_name).write_bytes(package)
         entry = dict(meta)
+        entry.setdefault("schema_version", 1)
+        entry.setdefault("release_notes", "")
+        entry.setdefault("breaking_changes", [])
+        entry.setdefault("requirements", {}).setdefault("capabilities", [])
         entry.update({
             "source_commit": commit,
             "download_url": f"{args.base_url.rstrip('/')}/packages/{package_name}",
@@ -74,7 +78,7 @@ def main():
         skills.append(entry)
 
     registry = {
-        "registry_version": 1,
+        "registry_version": 2,
         "repository": "https://github.com/xiaoguiwucan/LightAgent-SkillHub",
         "source_commit": commit,
         "skills": skills,

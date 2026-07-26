@@ -7,3 +7,7 @@
 兼容性由 `min_lightagent_version`、`max_lightagent_version` 和 `platforms` 描述。无法以非 root 用户在官方 Docker 中完成依赖准备时，必须填写 `docker_notes`。
 
 复杂技能应在 `evaluations/<name>/cases.json` 提供代表性输入与验收条件，测试答案不能写入发布包。
+
+Schema v2 脚本技能必须在 `lightagent.entrypoints` 声明入口名、相对路径、运行时、超时、输出/内存/进程上限和参数约束。技能正文只说明如何调用 `skill_run`，不提供绕过 Runner 的直接命令。
+
+系统组件使用 `requirements.capabilities` 中的稳定能力名。技能安装和运行时不得执行 `sudo`、`apt` 或 `brew`；缺少能力时，在 `docker_notes` 中说明 `skills-full` 镜像或自定义 `SKILL_CAPABILITY_PACKS` 构建参数。

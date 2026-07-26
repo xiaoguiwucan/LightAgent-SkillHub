@@ -4,6 +4,7 @@
   "type": "object",
   "required": ["name", "version", "description", "author", "license", "homepage", "repository", "min_lightagent_version", "platforms", "category", "tags", "requirements", "lightagent"],
   "properties": {
+    "schema_version": {"type": "integer", "enum": [1, 2]},
     "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
     "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"},
     "description": {"type": "string", "minLength": 10, "maxLength": 500},
@@ -18,15 +19,18 @@
     "tags": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
     "status": {"enum": ["active", "deprecated", "yanked", "revoked"]},
     "publisher": {"enum": ["official", "verified", "community"]},
+    "release_notes": {"type": "string", "maxLength": 4000},
+    "breaking_changes": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 500}, "uniqueItems": true},
     "requirements": {
       "type": "object",
       "required": ["env", "bins", "python", "npm", "downloads"],
       "properties": {
-        "env": {"type": "array", "items": {"type": "string"}},
+        "env": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"}, "uniqueItems": true},
         "bins": {"type": "array", "items": {"type": "string"}},
         "python": {"type": "array", "items": {"type": "string"}},
         "npm": {"type": "array", "items": {"type": "string"}},
-        "downloads": {"type": "array", "items": {"type": "object", "required": ["url", "sha256"], "properties": {"url": {"type": "string", "pattern": "^https://"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}}}
+        "downloads": {"type": "array", "items": {"type": "object", "required": ["url", "sha256"], "properties": {"url": {"type": "string", "pattern": "^https://"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}}},
+        "capabilities": {"type": "array", "items": {"enum": ["office-documents", "media-processing", "browser-automation"]}, "uniqueItems": true}
       },
       "additionalProperties": false
     },
@@ -37,7 +41,34 @@
         "network_domains": {"type": "array", "items": {"type": "string"}},
         "file_paths": {"type": "array", "items": {"type": "string"}},
         "tools": {"type": "array", "items": {"type": "string"}},
-        "docker_notes": {"type": "string"}
+        "docker_notes": {"type": "string"},
+        "entrypoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "path", "runtime", "timeout_seconds", "arguments"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+              "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9_./-]+$"},
+              "runtime": {"enum": ["python", "node", "executable"]},
+              "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+              "max_output_bytes": {"type": "integer", "minimum": 1024, "maximum": 1048576},
+              "max_memory_mb": {"type": "integer", "minimum": 64, "maximum": 2048},
+              "max_processes": {"type": "integer", "minimum": 1, "maximum": 64},
+              "arguments": {
+                "type": "object",
+                "required": ["min_items", "max_items", "max_length"],
+                "properties": {
+                  "min_items": {"type": "integer", "minimum": 0, "maximum": 64},
+                  "max_items": {"type": "integer", "minimum": 0, "maximum": 64},
+                  "max_length": {"type": "integer", "minimum": 1, "maximum": 4096}
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     }

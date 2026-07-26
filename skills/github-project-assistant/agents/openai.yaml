@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub 项目助手"
+  short_description: "查询 GitHub 项目并安全提交 Issue、审查和合并 PR"
+  default_prompt: "使用 GitHub 项目助手查询已配置仓库的 Issue、PR、CI、Release 与更新动态。"

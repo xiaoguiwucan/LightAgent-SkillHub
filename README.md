@@ -18,6 +18,12 @@ LightAgent Web 控制台的“技能 -> 获取在线技能”可直接浏览、�
 
 网页目录由 GitHub Pages 发布，LightAgent 会优先读取该目录，并在不可用时使用最后一次验证通过的缓存或旧技能广场。
 
+## 已收录技能
+
+- `github-project-assistant` `1.0.0`：配合 LightAgent `github_project` 和 `scheduler` 工具，查询多个 GitHub 项目的 Issue、PR、CI、Release 和动态，并在用户明确确认后创建 Issue 或合并已有 PR。
+- `av-meta` `1.1.0`：查询用户当前明确提供的单个番号元数据。
+- `hello-lightagent` `1.0.0`：验证 Skill Hub 安装链路和运行环境。
+
 ## 投稿
 
 1. 从 `templates/skill/` 复制模板到 `skills/<name>/`。

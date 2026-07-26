@@ -16,6 +16,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python scripts/validate.py
       - run: python scripts/build_registry.py --output dist
+      - run: python -m unittest discover -s tests
       - name: Official Docker non-root smoke test
         run: docker run --rm --user agent --entrypoint python -v "$PWD:/hub:ro" -w /hub yideng966/lightagent:latest scripts/docker_smoke.py
       - uses: actions/checkout@v4

@@ -1,5 +1,6 @@
 ---
 name: example-skill
+schema_version: 2
 version: 0.1.0
 description: 简明说明技能用途以及应该在什么情况下使用。
 author: your-github-name
@@ -19,11 +20,13 @@ requirements:
   python: []
   npm: []
   downloads: []
+  capabilities: []
 lightagent:
   network_domains: []
   file_paths: []
   tools: []
   docker_notes: 可在官方 Docker 非 root 用户环境运行。
+  entrypoints: []
 ---
 
 # Example Skill

@@ -13,6 +13,14 @@ from packaging.version import InvalidVersion, Version
 from common import FORBIDDEN_PATTERNS, RESERVED_NAMES, ROOT, parse_skill
 
 
+DIRECT_SCRIPT_EXECUTION = re.compile(
+    r"(?im)(?:^|[`\s;&|])(?:python(?:3)?|node|bash|sh)\s+[^\n`]*(?:<base_dir>|scripts[/\\])"
+)
+RESERVED_RUNNER_ENV = {
+    "HOME", "PATH", "PYTHONHOME", "PYTHONPATH", "NODE_PATH", "TMP", "TEMP", "TMPDIR",
+}
+
+
 def main():
     schema = json.loads((ROOT / "schemas/skill.schema.json").read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
@@ -63,6 +71,12 @@ def main():
         except InvalidVersion as exc:
             errors.append(f"{rel}: LightAgent 版本无效: {exc}")
         declared_domains = set(meta.get("lightagent", {}).get("network_domains", []))
+        capabilities = meta.get("requirements", {}).get("capabilities", [])
+        if len(capabilities) != len(set(capabilities)):
+            errors.append(f"{rel}: requirements.capabilities 不得重复")
+        for env_name in meta.get("requirements", {}).get("env", []):
+            if env_name in RESERVED_RUNNER_ENV or str(env_name).startswith("LIGHTAGENT_"):
+                errors.append(f"{rel}: 不得声明 Runner 保留环境变量 {env_name}")
         for package in meta.get("requirements", {}).get("python", []):
             if str(package).startswith("-") or "://" in str(package):
                 errors.append(f"{rel}: Python 依赖只能使用包名与版本约束")
@@ -76,6 +90,29 @@ def main():
         for label, pattern in FORBIDDEN_PATTERNS.items():
             if pattern.search(text):
                 errors.append(f"{rel}: {label}")
+        entrypoints = meta.get("lightagent", {}).get("entrypoints", [])
+        scripts = [item for item in (path.parent / "scripts").rglob("*") if item.is_file()] if (path.parent / "scripts").is_dir() else []
+        if meta.get("schema_version") == 2 and scripts and not entrypoints:
+            errors.append(f"{rel}: Schema v2 脚本技能必须声明 lightagent.entrypoints")
+        if meta.get("schema_version") == 2 and scripts and DIRECT_SCRIPT_EXECUTION.search(text):
+            errors.append(f"{rel}: Schema v2 禁止要求通过 Bash/解释器直接执行技能脚本，请使用 skill_run")
+        names = set()
+        for entrypoint in entrypoints:
+            entry_name = str(entrypoint.get("name") or "")
+            if entry_name in names:
+                errors.append(f"{rel}: entrypoint 名称重复: {entry_name}")
+            names.add(entry_name)
+            entry_path = path.parent / str(entrypoint.get("path") or "")
+            try:
+                entry_path.resolve().relative_to(path.parent.resolve())
+            except ValueError:
+                errors.append(f"{rel}: entrypoint 路径越界: {entrypoint.get('path')}")
+                continue
+            if not entry_path.is_file() or entry_path.is_symlink():
+                errors.append(f"{rel}: entrypoint 文件不存在或为符号链接: {entrypoint.get('path')}")
+            arguments = entrypoint.get("arguments") or {}
+            if int(arguments.get("min_items", 0)) > int(arguments.get("max_items", 0)):
+                errors.append(f"{rel}: entrypoint {entry_name} 的 min_items 不能大于 max_items")
         for file_path in path.parent.rglob("*"):
             if file_path.is_symlink():
                 errors.append(f"{file_path.relative_to(ROOT)}: 不允许符号链接")

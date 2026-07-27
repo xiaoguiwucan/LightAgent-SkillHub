@@ -20,6 +20,7 @@ LightAgent Web 控制台的“技能 -> 获取在线技能”可直接浏览、�
 
 ## 已收录技能
 
+- `last30days` `3.18.3`：调研任意主题最近 30 天在 Reddit、Hacker News、GitHub、Polymarket、X、YouTube和公开网页中的讨论，支持零密钥降级、来源诊断与本地研究库。
 - `github-project-assistant` `1.0.0`：配合 LightAgent `github_project` 和 `scheduler` 工具，查询多个 GitHub 项目的 Issue、PR、CI、Release 和动态，并在用户明确确认后创建 Issue 或合并已有 PR。
 - `av-meta` `1.1.0`：查询用户当前明确提供的单个番号元数据。
 - `hello-lightagent` `1.0.0`：验证 Skill Hub 安装链路和运行环境。
@@ -42,3 +43,5 @@ Schema v2 脚本技能必须声明结构化 `lightagent.entrypoints`，并通过
 ## 许可证
 
 仓库基础设施采用 Apache-2.0。每个技能必须单独声明 SPDX 许可证，技能代码与素材以该技能声明为准。
+
+`last30days` 基于 Matt Van Horn 的 MIT 许可项目 [mvanhorn/last30days-skill](https://github.com/mvanhorn/last30days-skill) `v3.18.3` 适配，版权与许可文本保留在技能包内。

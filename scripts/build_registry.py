@@ -27,7 +27,10 @@ def deterministic_zip(source: Path):
             for path in sorted(source.rglob("*")):
                 if not path.is_file() or path.is_symlink():
                     continue
-                info = zipfile.ZipInfo(str(Path(source.name) / path.relative_to(source)))
+                relative = path.relative_to(source)
+                if "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}:
+                    continue
+                info = zipfile.ZipInfo(str(Path(source.name) / relative))
                 info.date_time = (1980, 1, 1, 0, 0, 0)
                 info.external_attr = (0o755 if os.access(path, os.X_OK) else 0o644) << 16
                 archive.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)

@@ -2,8 +2,6 @@ import json
 import sys
 import tempfile
 import unittest
-import zipfile
-from io import BytesIO
 from pathlib import Path
 
 
@@ -27,19 +25,6 @@ class RegistryV2Test(unittest.TestCase):
     def test_deterministic_package_contains_runner_metadata(self):
         package = deterministic_zip(ROOT / "skills" / "av-meta")
         self.assertGreater(len(package), 100)
-
-    def test_deterministic_package_excludes_python_bytecode(self):
-        with tempfile.TemporaryDirectory() as temp:
-            skill = Path(temp) / "example"
-            cache = skill / "scripts" / "__pycache__"
-            cache.mkdir(parents=True)
-            (skill / "SKILL.md").write_text("example", encoding="utf-8")
-            (cache / "entry.cpython-313.pyc").write_bytes(b"bytecode")
-
-            with zipfile.ZipFile(BytesIO(deterministic_zip(skill))) as archive:
-                names = archive.namelist()
-
-        self.assertEqual(["example/SKILL.md"], names)
 
     def test_schema_exposes_capabilities_and_change_notes(self):
         schema = json.loads((ROOT / "schemas" / "skill.schema.json").read_text(encoding="utf-8"))

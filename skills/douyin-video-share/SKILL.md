@@ -1,7 +1,7 @@
 ---
 name: douyin-video-share
 schema_version: 2
-version: 1.0.0
+version: 1.1.0
 description: >
   识别当前消息中的单个抖音视频分享链接，下载公开视频并通过 send 发送到当前 Web、微信群或其他会话。当用户消息包含 v.douyin.com 短链接、iesdouyin.com 分享页或 douyin.com/video 链接时必须使用；即使用户只粘贴分享文案而没有明确说“下载”也要自动处理。仅处理单个公开视频，不处理主页、合集、直播、图集或批量下载。
 author: 风
@@ -15,11 +15,11 @@ category: media
 tags: [douyin, video, download, wechat-group, share-link]
 status: active
 publisher: community
-release_notes: 首次发布；支持自动识别单个抖音分享链接、受限下载和原会话视频发送。
+release_notes: 优先请求页面声明的高规格来源，使用 ffprobe 检测实际宽高、帧率、编码、码率和时长；旧低清缓存会自动刷新，所有视频均保持下载原文件发送，不再转码压缩。
 breaking_changes: []
 requirements:
   env: []
-  bins: [python3, ffmpeg]
+  bins: [python3, ffprobe]
   python: []
   npm: []
   downloads: []
@@ -28,7 +28,7 @@ lightagent:
   network_domains: [v.douyin.com, www.douyin.com, m.douyin.com, www.iesdouyin.com, m.iesdouyin.com, aweme.snssdk.com, "*.douyinvod.com", "*.idouyinvod.com"]
   file_paths: [<workspace>/videos/douyin-video-share]
   tools: [skill_run, send]
-  docker_notes: 需要 media-processing 能力；单个视频最大下载 200 MiB，超过 20 MiB 时生成不超过 20 MiB 的群聊发送版本，文件写入 LightAgent workspace。
+  docker_notes: 需要 media-processing 能力中的 ffprobe；单个视频最大下载 200 MiB，技能不转码压缩。当前微信 Web 协议对超过约 25 MB 的文件缺少稳定兼容保证，大文件可能发送失败。
   entrypoints:
     - name: download_video
       path: scripts/download_video.py
@@ -49,20 +49,20 @@ lightagent:
 
 ## 执行
 
-1. 从当前消息保留完整分享文案，不要手工改写或解析链接。
+1. 从当前消息保留完整分享文案，不要手工改写、总结、转义、脱敏或解析链接。只要当前消息含有字面量 `https://v.douyin.com/`、`https://www.douyin.com/video/` 或其他已声明抖音 HTTPS 地址，就必须先原样调用入口；不得自行回复“链接无效”“地址被本地化”。
 2. 调用 `skill_run` 的 `download_video` 入口：
 
 ```json
 {"skill_name":"douyin-video-share","entrypoint":"download_video","arguments":["<当前完整消息>","--output-root","<workspace>"]}
 ```
 
-3. 脚本返回 `ok: true` 后，立即调用一次：
+3. 脚本返回 `ok: true` 后，检查 `output_width`、`output_height`、`fps`、编码、码率、`size_bytes` 和 `large_file_compatibility_warning`，然后将原文件立即调用一次：
 
 ```json
 {"path":"<video_file>","message":"抖音视频下载完成"}
 ```
 
-4. `send` 成功后只回复“视频已发送”，不要再发送下载地址或重复发送文件。
+4. `send` 成功后只回复“视频已发送”，不要再发送下载地址或重复发送文件。若大文件发送失败，明确说明当前微信通道可能不支持该原始文件大小；不得改为压缩后重发。
 
 `<workspace>` 是 LightAgent workspace；官方 Docker 默认为 `/home/agent/lightagent`。下载文件固定保存到 `<workspace>/videos/douyin-video-share/<aweme_id>.mp4`。
 
@@ -81,8 +81,12 @@ lightagent:
 ## 约束
 
 - 每轮最多调用一次 `skill_run` 和一次 `send`。
+- `skill_run` 的第一项参数必须逐字来自当前入站消息，不能从近期摘要、引用摘要或模型复述中重建 URL。用户只说“这个”而当前消息没有完整链接时，要求重新发送完整分享文案，不能把摘要中的 `http[local-path]` 当作原链接。
 - 只接受 HTTPS 抖音域名，脚本会逐跳校验重定向并拒绝其他站点、内网地址和非标准端口。
-- 单个源视频上限为 200 MiB；超限时不保留半成品。源视频超过 20 MiB 时，使用已声明的 `media-processing` 能力生成约 18 MiB 的群聊发送版本。
+- 优先请求页面视频 ID 对应的 1080p 无水印地址，并以 `ffprobe` 的真实宽高为准；如果接口拒绝请求或实际清晰度低于页面声明，再回退页面提供的地址。抖音匿名接口可能降级清晰度，`quality_preserved` 会如实标记，技能不宣称得到平台未实际提供的规格。
+- 缓存文件低于页面声明的分辨率时自动重新下载，避免继续发送旧版 720p 低清缓存。
+- 单个源视频上限为 200 MiB；超限时不保留半成品。下载后的原 MP4 直接交给 `send`，任何大小都不转码、不缩放、不降低码率。
+- 20 MiB 是旧版技能的保守阈值，并非已确认的微信官方硬限制。Wechaty 历史 Web 协议资料表明超过约 25 MB 的文件需要额外上传签名；当前 LightAgent 通道未确认支持该流程，因此脚本对超过 24 MiB 的原文件标记兼容性警告，但仍按用户要求尝试原版发送。
 - 不处理用户主页、合集、直播、图集、音乐、评论或批量链接。
 - 不使用 Cookie，不登录抖音，不绕过私密、好友可见、地区或账号访问限制。
 - 不改用 `browser`、`web_fetch` 或 Bash 下载，也不把远程 URL 直接传给 `send`。
@@ -94,7 +98,7 @@ lightagent:
 
 - `missing_url` 或 `unsupported_url`：提示用户发送完整的抖音 HTTPS 分享链接。
 - `unsupported_item_type`：说明当前只支持单个视频，不处理图集、直播、主页或合集。
-- `video_too_large`：说明视频超过 200 MiB，未下载也未发送。
-- `missing_media_processing`、`transcode_failed` 或 `transcode_timeout`：说明群聊发送版本生成失败，不发送过大的源文件。
+- `video_too_large`：准确说明原版视频超过 200 MiB 安全上限；这是文件大小问题，不得误报为没有有效 HTTPS 链接。若用户坚持不压缩，则无法通过本技能发送该视频。
+- `missing_media_processing`：说明缺少 `ffprobe`，无法确认真实视频规格，因此不发送未经检测的文件。
 - `download_failed`、`invalid_video` 或页面结构变化：返回脚本中的简短错误，不尝试其他解析站或第三方接口。
 - 任何失败都不得调用 `send`，不得声称下载或发送成功。

@@ -13,6 +13,24 @@
     "must_not_use_tools": ["browser", "web_fetch", "bash"]
   },
   {
+    "name": "长剧分享文案仍须原样进入下载器",
+    "prompt": "7.69 复制打开抖音，看看【过瘾剧场的作品】我真不是大佬啊，一口气看过瘾，我真不是大佬啊剑神学... https://v.douyin.com/BslXMEVrobc/ 03/04 m@Q.XM FHI:/ :4pm",
+    "must_use_tools": ["skill_run"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "带括号昵称和冒号尾文案",
+    "prompt": "8.25 复制打开抖音，看看【小飞兔电竞(DOTA2大神萌妹一起开黑)的作品】dota2里的变身术 大变活人！ # dota2 https://v.douyin.com/NbzbK9JOh18/ 01/04 :7pm c@A.tR HVy:/",
+    "must_use_tools": ["skill_run", "send"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "链接后仍有复制口令文案",
+    "prompt": "2.51 快看 你看到了什么# 含情脉脉的眼神 # 眼神杀# 御姐# 颜值 https://v.douyin.com/hyrnk3IG0Mo/ 复制此链接，打开抖音搜索，直接观看视频！ 05/13 qRx:/ :5pm E@h.Ox",
+    "must_use_tools": ["skill_run", "send"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
     "name": "主页不属于单视频",
     "prompt": "帮我下载 https://www.douyin.com/user/example 的全部视频",
     "must_contain": ["只支持单个视频"],

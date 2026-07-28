@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -24,8 +24,7 @@ USER_AGENT = (
 )
 MAX_HTML_BYTES = 2 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
-MAX_SEND_BYTES = 20 * 1024 * 1024
-TARGET_SEND_BYTES = 18 * 1024 * 1024
+MAX_SEND_BYTES = 24 * 1024 * 1024
 READ_CHUNK_BYTES = 256 * 1024
 EXACT_HOSTS = {
     "v.douyin.com",
@@ -162,6 +161,9 @@ def parse_video_page(html: str) -> dict[str, Any]:
         "title": str(item.get("desc") or ""),
         "author": str((item.get("author") or {}).get("nickname") or ""),
         "duration_ms": int(video.get("duration") or 0),
+        "source_width": int(video.get("width") or play_addr.get("width") or 0),
+        "source_height": int(video.get("height") or play_addr.get("height") or 0),
+        "video_id": str(play_addr.get("uri") or ""),
         "media_url": media_url,
     }
 
@@ -192,6 +194,92 @@ def _looks_like_mp4(path: Path) -> bool:
             return b"ftyp" in handle.read(64)
     except OSError:
         return False
+
+
+def _parse_frame_rate(value: str) -> float:
+    try:
+        numerator, denominator = value.split("/", 1)
+        return round(float(numerator) / float(denominator), 3) if float(denominator) else 0.0
+    except (AttributeError, TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def probe_video(path: Path) -> dict[str, Any]:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise DownloadError("missing_media_processing", "缺少 ffprobe，无法检测视频实际规格")
+    try:
+        completed = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate:format=duration,bit_rate",
+                "-of",
+                "json",
+                str(path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise DownloadError("invalid_video", "视频规格检测超时") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
+        raise DownloadError("invalid_video", f"视频规格检测失败：{detail[0]}")
+    try:
+        document = json.loads(completed.stdout)
+        streams = document.get("streams") or []
+        video = next(stream for stream in streams if stream.get("codec_type") == "video")
+        audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), {})
+        file_format = document.get("format") or {}
+        return {
+            "width": int(video.get("width") or 0),
+            "height": int(video.get("height") or 0),
+            "fps": _parse_frame_rate(str(video.get("avg_frame_rate") or "0/1")),
+            "video_codec": str(video.get("codec_name") or ""),
+            "audio_codec": str(audio.get("codec_name") or ""),
+            "video_bitrate_bps": int(video.get("bit_rate") or 0),
+            "audio_bitrate_bps": int(audio.get("bit_rate") or 0),
+            "total_bitrate_bps": int(file_format.get("bit_rate") or 0),
+            "duration_ms": int(float(file_format.get("duration") or 0) * 1000),
+        }
+    except (KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise DownloadError("invalid_video", "视频规格数据不完整") from exc
+
+
+def _meets_declared_resolution(spec: dict[str, Any], info: dict[str, Any]) -> bool:
+    source_width = int(info.get("source_width") or 0)
+    source_height = int(info.get("source_height") or 0)
+    if not source_width or not source_height:
+        return True
+    return int(spec.get("width") or 0) >= source_width and int(spec.get("height") or 0) >= source_height
+
+
+def _quality_label(spec: dict[str, Any]) -> str:
+    short_edge = min(int(spec.get("width") or 0), int(spec.get("height") or 0))
+    return f"{short_edge}p" if short_edge else "unknown"
+
+
+def build_media_candidates(info: dict[str, Any]) -> list[tuple[str, str]]:
+    original_url = str(info["media_url"])
+    parsed = urlsplit(original_url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    video_id = str(info.get("video_id") or query.get("video_id") or "")
+    candidates: list[tuple[str, str]] = []
+    if video_id and "/aweme/v1/play" in parsed.path:
+        query["video_id"] = video_id
+        query["ratio"] = "1080p"
+        preferred_path = parsed.path.replace("/playwm/", "/play/", 1)
+        preferred = urlunsplit((parsed.scheme, parsed.netloc, preferred_path, urlencode(query), parsed.fragment))
+        candidates.append((preferred, "1080p-request"))
+    if original_url not in {url for url, _ in candidates}:
+        candidates.append((original_url, "page-fallback"))
+    return candidates
 
 
 def _download_once(url: str, destination: Path, referer: str) -> int:
@@ -226,7 +314,9 @@ def _download_once(url: str, destination: Path, referer: str) -> int:
             temp_path.unlink()
 
 
-def download_video(info: dict[str, Any], output_root: Path, share_url: str) -> tuple[Path, int]:
+def download_video(
+    info: dict[str, Any], output_root: Path, share_url: str
+) -> tuple[Path, int, str, dict[str, Any]]:
     aweme_id = info.get("aweme_id") or ""
     if not re.fullmatch(r"[0-9]{10,32}", aweme_id):
         raise DownloadError("invalid_aweme_id", "抖音视频 ID 无效")
@@ -237,99 +327,32 @@ def download_video(info: dict[str, Any], output_root: Path, share_url: str) -> t
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination = destination_dir / f"{aweme_id}.mp4"
     if destination.is_file() and 0 < destination.stat().st_size <= MAX_VIDEO_BYTES and _looks_like_mp4(destination):
-        return destination, destination.stat().st_size
+        cached_spec = probe_video(destination)
+        if _meets_declared_resolution(cached_spec, info):
+            return destination, destination.stat().st_size, f"cache-{_quality_label(cached_spec)}", cached_spec
 
-    original_url = str(info["media_url"])
-    candidates = []
-    clean_url = original_url.replace("/playwm/", "/play/", 1)
-    for candidate in (clean_url, original_url):
-        if candidate not in candidates:
-            candidates.append(candidate)
+    candidates = build_media_candidates(info)
     last_error: Exception | None = None
-    for candidate in candidates:
-        try:
-            return destination, _download_once(candidate, destination, share_url)
-        except DownloadError as exc:
-            if exc.code == "video_too_large":
-                raise
-            last_error = exc
-        except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
-            last_error = exc
-    raise DownloadError("download_failed", f"抖音视频下载失败：{last_error}")
-
-
-def _target_video_bitrate_kbps(duration_ms: int) -> int:
-    if duration_ms <= 0:
-        raise DownloadError("invalid_duration", "无法确定视频时长，不能生成群聊发送版本")
-    total_kbps = int(TARGET_SEND_BYTES * 8 / (duration_ms / 1000) / 1000)
-    return max(180, total_kbps - 72)
-
-
-def prepare_video_for_send(path: Path, duration_ms: int) -> tuple[int, bool]:
-    size = path.stat().st_size
-    if size <= MAX_SEND_BYTES:
-        return size, False
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise DownloadError("missing_media_processing", "视频超过 20 MiB，需要 media-processing 能力生成群聊发送版本")
-
-    video_kbps = _target_video_bitrate_kbps(duration_ms)
-    temp_path = path.with_name(f".{path.stem}-send.mp4")
+    candidate_path = destination.with_name(f".{destination.stem}-candidate.mp4")
     try:
-        completed = subprocess.run(
-            [
-                ffmpeg,
-                "-y",
-                "-threads",
-                "1",
-                "-filter_threads",
-                "1",
-                "-i",
-                str(path),
-                "-map",
-                "0:v:0",
-                "-map",
-                "0:a:0?",
-                "-vf",
-                "scale='min(854,iw)':-2",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-threads",
-                "1",
-                "-b:v",
-                f"{video_kbps}k",
-                "-maxrate",
-                f"{video_kbps}k",
-                "-bufsize",
-                f"{video_kbps * 2}k",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "64k",
-                "-movflags",
-                "+faststart",
-                str(temp_path),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=420,
-            check=False,
-        )
-        if completed.returncode != 0:
-            detail = (completed.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
-            raise DownloadError("transcode_failed", f"群聊发送版本生成失败：{detail[0]}")
-        if not _looks_like_mp4(temp_path) or temp_path.stat().st_size > MAX_SEND_BYTES:
-            raise DownloadError("transcode_failed", "群聊发送版本无效或仍超过 20 MiB")
-        os.replace(temp_path, path)
-        return path.stat().st_size, True
-    except subprocess.TimeoutExpired as exc:
-        raise DownloadError("transcode_timeout", "生成群聊发送版本超过 420 秒") from exc
+        for index, (candidate, candidate_name) in enumerate(candidates):
+            try:
+                size = _download_once(candidate, candidate_path, share_url)
+                spec = probe_video(candidate_path)
+                if not _meets_declared_resolution(spec, info) and index < len(candidates) - 1:
+                    continue
+                os.replace(candidate_path, destination)
+                return destination, size, f"{candidate_name}-{_quality_label(spec)}", spec
+            except DownloadError as exc:
+                if exc.code == "video_too_large":
+                    raise
+                last_error = exc
+            except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+                last_error = exc
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        if candidate_path.exists():
+            candidate_path.unlink()
+    raise DownloadError("download_failed", f"抖音视频下载失败：{last_error}")
 
 
 def main() -> int:
@@ -340,16 +363,29 @@ def main() -> int:
     try:
         share_url = extract_share_url(args.share_text)
         info = fetch_video_info(share_url)
-        video_file, _ = download_video(info, Path(args.output_root), share_url)
-        size, transcoded = prepare_video_for_send(video_file, info["duration_ms"])
+        video_file, size, selected_quality, spec = download_video(info, Path(args.output_root), share_url)
+        duration_ms = spec.get("duration_ms") or info["duration_ms"]
+        quality_preserved = _meets_declared_resolution(spec, info)
         result = {
             "ok": True,
             "aweme_id": info["aweme_id"],
             "title": info["title"],
             "author": info["author"],
-            "duration_ms": info["duration_ms"],
+            "duration_ms": duration_ms,
             "size_bytes": size,
-            "transcoded_for_send": transcoded,
+            "source_width": info["source_width"],
+            "source_height": info["source_height"],
+            "output_width": spec["width"],
+            "output_height": spec["height"],
+            "fps": spec["fps"],
+            "video_codec": spec["video_codec"],
+            "audio_codec": spec["audio_codec"],
+            "video_bitrate_bps": spec["video_bitrate_bps"],
+            "audio_bitrate_bps": spec["audio_bitrate_bps"],
+            "selected_quality": selected_quality,
+            "quality_preserved": quality_preserved,
+            "transcoded_for_send": False,
+            "large_file_compatibility_warning": size > MAX_SEND_BYTES,
             "video_file": str(video_file),
             "source_url": share_url,
         }

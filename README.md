@@ -20,6 +20,7 @@ LightAgent Web 控制台的“技能 -> 获取在线技能”可直接浏览、�
 
 ## 已收录技能
 
+- `social-media-downloader` `2.0.1`：统一下载抖音、TikTok、YouTube 和 Telegram 视频或图集，支持原始画质、断点续传、无损分段、进度查询及 Telegram 登录会话。
 - `douyin-video-share` `1.0.0`：自动识别当前消息中的单个抖音公开视频分享链接，通过 Skill Runner 安全下载并发送回原 Web 或微信群会话。
 - `github-project-assistant` `1.0.0`：配合 LightAgent `github_project` 和 `scheduler` 工具，查询多个 GitHub 项目的 Issue、PR、CI、Release 和动态，并在用户明确确认后创建 Issue 或合并已有 PR。
 - `av-meta` `1.1.0`：查询用户当前明确提供的单个番号元数据。

@@ -28,6 +28,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 CHUNK_BYTES = 1024 * 1024
 DEFAULT_CONCURRENCY = 3
 DOWNLOAD_DEADLINE_SECONDS = 540
+YTDLP_TRANSIENT_ATTEMPTS = 3
 MAX_COLLECTION_ITEMS = 20
 DEFAULT_COLLECTION_ITEMS = 5
 SUPPORTED_HOSTS = {
@@ -432,9 +433,11 @@ def _run_resumable(root: Path, task: dict[str, Any], command: list[str], media_d
     task["status"] = "downloading"
     task["last_error"] = None
     save_task(root, task)
+    process_log = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
     try:
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, start_new_session=os.name == "posix")
+        process = subprocess.Popen(command, stdout=process_log, stderr=subprocess.STDOUT, text=True, start_new_session=os.name == "posix")
     except OSError as exc:
+        process_log.close()
         raise TaskError("downloader_start_failed", f"无法启动平台下载器：{exc}") from exc
     try:
         while process.poll() is None:
@@ -451,17 +454,17 @@ def _run_resumable(root: Path, task: dict[str, Any], command: list[str], media_d
                 _progress(root, task, media_dir, started, initial)
                 return False
             time.sleep(1)
-        stderr = (process.stderr.read() if process.stderr else "").strip()
+        process_log.seek(0)
+        output = process_log.read().strip()
         if process.returncode != 0:
-            detail = "\n".join(stderr.splitlines()[-12:]) if stderr else "下载器返回失败"
+            detail = "\n".join(output.splitlines()[-12:]) if output else "下载器返回失败"
             raise TaskError("download_failed", detail[-2000:])
         _progress(root, task, media_dir, started, initial)
         return True
     finally:
         if process.poll() is None:
             _stop_process(process)
-        if process.stderr:
-            process.stderr.close()
+        process_log.close()
 
 
 def _stop_process(process: subprocess.Popen[Any]) -> None:
@@ -639,6 +642,10 @@ def _yt_options(task: dict[str, Any], media_dir: Path, progress_hook: Any) -> di
         "merge_output_format": "mp4",
         "format": "bestvideo*+bestaudio/best",
         "playlistend": count,
+        "retries": 3,
+        "fragment_retries": 3,
+        "file_access_retries": 3,
+        "socket_timeout": 30,
         "outtmpl": {"default": output},
         "postprocessor_args": {"ffmpeg": ["-threads", "1"]},
         "progress_hooks": [progress_hook],
@@ -647,6 +654,23 @@ def _yt_options(task: dict[str, Any], media_dir: Path, progress_hook: Any) -> di
         "writesubtitles": False,
         "writeinfojson": False,
     }
+
+
+def _is_temporary_ytdlp_error(detail: str) -> bool:
+    normalized = detail.lower()
+    markers = (
+        "eof occurred in violation of protocol",
+        "unexpected_eof_while_reading",
+        "connection reset",
+        "connection aborted",
+        "remote end closed connection",
+        "temporarily unavailable",
+        "temporary failure",
+        "timed out",
+        "timeout",
+        "http error 429",
+    )
+    return any(marker in normalized for marker in markers) or bool(re.search(r"http error 5\d\d", normalized))
 
 
 def _run_ytdlp(root: Path, task: dict[str, Any], media_dir: Path) -> bool:
@@ -682,27 +706,37 @@ def _run_ytdlp(root: Path, task: dict[str, Any], media_dir: Path) -> bool:
             paused = True
             raise TaskError("insufficient_disk_space", "磁盘剩余空间不足，已保留断点")
 
-    logger = _YtLogger()
-    options = _yt_options(task, media_dir, progress)
-    options["logger"] = logger
-    try:
-        with yt_dlp.YoutubeDL(options) as downloader:
-            code = downloader.download([str(task["source_url"])])
-    except Exception as exc:
-        if paused:
-            task["status"] = "download_pending"
-            task["last_error"] = str(exc)[:500]
-            task["downloaded_bytes"] = _directory_bytes(media_dir)
-            save_task(root, task)
-            return False
-        detail = logger.errors[-1] if logger.errors else str(exc)
-        raise TaskError("download_failed", detail[-2000:]) from exc
-    if code:
-        raise TaskError("download_failed", (logger.errors[-1] if logger.errors else f"yt-dlp exit {code}")[-2000:])
+    for attempt in range(1, YTDLP_TRANSIENT_ATTEMPTS + 1):
+        logger = _YtLogger()
+        options = _yt_options(task, media_dir, progress)
+        options["logger"] = logger
+        try:
+            with yt_dlp.YoutubeDL(options) as downloader:
+                code = downloader.download([str(task["source_url"])])
+            if code:
+                raise RuntimeError(logger.errors[-1] if logger.errors else f"yt-dlp exit {code}")
+            break
+        except Exception as exc:
+            if paused:
+                task["status"] = "download_pending"
+                task["last_error"] = str(exc)[:500]
+                task["downloaded_bytes"] = _directory_bytes(media_dir)
+                save_task(root, task)
+                return False
+            detail = logger.errors[-1] if logger.errors else str(exc)
+            if attempt < YTDLP_TRANSIENT_ATTEMPTS and _is_temporary_ytdlp_error(detail):
+                task["last_error"] = f"临时网络错误，正在自动重试（{attempt}/{YTDLP_TRANSIENT_ATTEMPTS}）：{detail[-500:]}"
+                task["downloaded_bytes"] = _directory_bytes(media_dir)
+                save_task(root, task)
+                time.sleep(attempt)
+                continue
+            raise TaskError("download_failed", detail[-2000:]) from exc
     task["downloaded_bytes"] = _directory_bytes(media_dir)
     task["total_bytes"] = max(int(task.get("total_bytes") or 0), task["downloaded_bytes"])
     task["progress_percent"] = 100.0
     task["eta_seconds"] = 0
+    task["last_error"] = None
+    task.pop("error_code", None)
     save_task(root, task)
     return True
 
@@ -900,15 +934,23 @@ def prepare_media(arguments: list[str]) -> dict[str, Any]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("source_text")
     parser.add_argument("requester", nargs="?", default="用户")
-    parser.add_argument("count", nargs="?", type=int, default=None)
+    parser.add_argument("count", nargs="?", default=None)
     parser.add_argument("--data-root")
     args = parser.parse_args(arguments)
-    if args.count is not None and not 1 <= args.count <= MAX_COLLECTION_ITEMS:
+    range_requested = isinstance(args.count, str) and args.count.startswith("range:")
+    raw_count = args.count[6:] if range_requested else args.count
+    try:
+        requested_count = int(raw_count) if raw_count is not None else None
+    except (TypeError, ValueError) as exc:
+        raise TaskError("invalid_item_count", "合集数量必须是 1 到 20 的整数") from exc
+    if requested_count is not None and not 1 <= requested_count <= MAX_COLLECTION_ITEMS:
         raise TaskError("invalid_item_count", "合集数量必须在 1 到 20 之间")
     url, platform_name = extract_source(args.source_text)
-    count = args.count if args.count is not None else (DEFAULT_COLLECTION_ITEMS if platform_name == "youtube" else 1)
+    if platform_name == "telegram" and not range_requested:
+        requested_count = None
+    count = requested_count if requested_count is not None else (DEFAULT_COLLECTION_ITEMS if platform_name == "youtube" else 1)
     task = _new_task(platform_name, url, args.requester, count)
-    task["explicit_count"] = args.count is not None
+    task["explicit_count"] = requested_count is not None
     root = data_root(args.data_root)
     save_task(root, task)
     try:

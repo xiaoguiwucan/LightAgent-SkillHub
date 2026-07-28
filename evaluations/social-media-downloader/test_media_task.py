@@ -1,8 +1,10 @@
 import importlib.util
 import io
 import json
+import sys
 import tarfile
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -171,6 +173,64 @@ class MediaTaskTest(unittest.TestCase):
         self.assertEqual(20, options["playlistend"])
         self.assertEqual(["-threads", "1"], options["postprocessor_args"]["ffmpeg"])
         self.assertNotIn("recode_video", options)
+        self.assertEqual(3, options["retries"])
+
+    def test_ytdlp_temporary_error_classification(self):
+        self.assertTrue(MODULE._is_temporary_ytdlp_error("EOF occurred in violation of protocol (_ssl.c:1017)"))
+        self.assertTrue(MODULE._is_temporary_ytdlp_error("HTTP Error 503: Service Unavailable"))
+        self.assertFalse(MODULE._is_temporary_ytdlp_error("Unsupported URL"))
+
+    def test_ytdlp_retries_temporary_error_then_succeeds(self):
+        attempts = []
+
+        class FakeDownloader:
+            def __init__(self, options):
+                self.options = options
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def download(self, _urls):
+                attempts.append(len(attempts) + 1)
+                if len(attempts) < 3:
+                    message = "ERROR: EOF occurred in violation of protocol (_ssl.c:1017)"
+                    self.options["logger"].error(message)
+                    raise RuntimeError(message)
+                return 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("tiktok", "https://www.tiktok.com/@example/video/7608248907960814879", "用户", 1)
+            with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeDownloader)}), patch.object(MODULE.time, "sleep"):
+                self.assertTrue(MODULE._run_ytdlp(root, task, root / "media" / "tiktok" / task["media_id"]))
+        self.assertEqual([1, 2, 3], attempts)
+        self.assertIsNone(task["last_error"])
+
+    def test_telegram_ignores_bare_count_but_accepts_explicit_range(self):
+        captured = []
+
+        def capture(_root, task):
+            captured.append(dict(task))
+            return task
+
+        with patch.object(MODULE, "_download_task", side_effect=capture):
+            with tempfile.TemporaryDirectory() as directory:
+                MODULE.prepare_media(["https://t.me/example/100", "用户", "5", "--data-root", directory])
+            with tempfile.TemporaryDirectory() as directory:
+                MODULE.prepare_media(["https://t.me/example/100", "用户", "range:5", "--data-root", directory])
+        self.assertEqual((1, False), (captured[0]["requested_items"], captured[0]["explicit_count"]))
+        self.assertEqual((5, True), (captured[1]["requested_items"], captured[1]["explicit_count"]))
+
+    def test_resumable_downloader_reports_stdout_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("telegram", "https://t.me/example/100", "用户", 1)
+            with self.assertRaises(MODULE.TaskError) as caught:
+                MODULE._run_resumable(root, task, [sys.executable, "-c", "print('message 1511 not found'); raise SystemExit(1)"], root / "media" / "telegram" / "test")
+        self.assertIn("1511 not found", str(caught.exception))
 
     def test_tiktok_complete_video_url_skips_short_link_resolution(self):
         source = "https://www.tiktok.com/@jul.spamz.fr/video/7608248907960814879?is_from_webapp=1"

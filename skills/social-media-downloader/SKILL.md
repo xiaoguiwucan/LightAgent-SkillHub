@@ -1,7 +1,7 @@
 ---
 name: social-media-downloader
 schema_version: 2
-version: 2.0.1
+version: 2.0.2
 description: >
   识别当前消息中的抖音、TikTok、YouTube 或 Telegram 链接，创建可续传下载任务并按群聊实测上限发送原始画质视频或原图。支持分享文案、短链接、图集、媒体组、Shorts、频道和播放列表；用户查询进度、继续下载、继续发送、重发上一段或取消任务时也必须使用。
 author: 风
@@ -16,9 +16,10 @@ tags: [douyin, tiktok, youtube, telegram, video, gallery, download]
 status: active
 publisher: community
 release_notes: |
-  修复完整 TikTok 作品链接被错误当作短链预解析的问题，避免 Python urllib 遇到 TikTok TLS EOF 后提前中止下载。
-  现在仅对 vm.tiktok.com 和 vt.tiktok.com 短域名执行受控重定向；www.tiktok.com、m.tiktok.com 等完整作品页直接交给 yt-dlp 解析。
-  保持原始画质下载、断点续传、无损分段、群发阈值和其他平台行为不变。
+  修复 Telegram 单条消息被 Agent 默认数量 5 错误扩展为连续五条消息、其中一条不存在便导致整批失败的问题。
+  Telegram 单条链接现在固定下载当前消息；只有用户明确要求消息范围并传入 range:N 时才扩展，N 必须为 1 至 20。
+  TikTok 和 YouTube 遇到 TLS EOF、连接重置、超时、HTTP 429 或 5xx 等临时网络错误时，会在同一 Runner 内自动重试三轮并沿用断点。
+  下载器失败信息同时读取标准输出和错误输出，不再把 tdl 的具体原因丢失为“下载器返回失败”。
 breaking_changes: []
 requirements:
   env: []
@@ -100,10 +101,10 @@ lightagent:
 检测到抖音、TikTok、YouTube 或 Telegram 链接后，调用 `prepare_media`：
 
 ```json
-{"skill_name":"social-media-downloader","entrypoint":"prepare_media","arguments":["<当前完整消息>","<提问人显示名>","5"]}
+{"skill_name":"social-media-downloader","entrypoint":"prepare_media","arguments":["<当前完整消息>","<提问人显示名>"]}
 ```
 
-第三项是合集数量，必须为 `1` 至 `20`；单作品也可省略。分享文案必须逐字传入，不要由模型先提取、改写或脱敏 URL。
+单作品必须省略第三项。YouTube 频道或播放列表可在第三项传 `1` 至 `20`；Telegram 只有用户明确要求连续消息范围时才传 `range:N`，例如 `range:5`，禁止为单条消息传裸数字 `5`。分享文案必须逐字传入，不要由模型先提取、改写或脱敏 URL。
 
 - 返回 `status: ready` 且 `delivery_parts` 非空：立即调用 `next_delivery`，再把其 `file` 交给 `send`。发送说明使用入口返回的 `message`。
 - 返回 `status: ready` 但没有 `delivery_parts`：媒体已下载，但群发阈值尚未实测，不调用 `send`。
@@ -127,6 +128,8 @@ lightagent:
 先调用 `telegram_status`。未配置时只提示管理员按 `references/telegram-login.md` 在 LightAgent 宿主机或容器终端扫码登录；群成员不能触发安装、登录、退出或切换账号。
 
 登录账号可下载它有权访问的公开频道、已加入私有频道、`t.me/c/...` 消息、受保护会话媒体和同一 `grouped_id` 媒体组。不得自动加入邀请、访问无权内容、自毁或付费内容，也不得无限遍历频道历史。
+
+单个 Telegram 消息链接只下载该消息及其同一媒体组。只有用户明确提出连续消息数量时，才在 `prepare_media` 第三项传 `range:N`；不要把默认合集数量用于 Telegram。
 
 ## 画质、分段与群发
 

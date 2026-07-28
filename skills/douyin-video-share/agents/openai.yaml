@@ -1,0 +1,4 @@
+interface:
+  display_name: "抖音视频分享下载"
+  short_description: "自动识别抖音分享链接，下载公开视频并发送到当前会话"
+  default_prompt: "识别当前消息中的抖音视频链接，下载后发送视频文件。"

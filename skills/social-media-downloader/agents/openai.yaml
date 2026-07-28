@@ -1,0 +1,4 @@
+interface:
+  display_name: "多平台媒体下载"
+  short_description: "原画下载抖音、TikTok、YouTube 与 Telegram 媒体"
+  default_prompt: "识别当前消息中的媒体链接，创建可续传任务并按发送状态交付原始文件。"

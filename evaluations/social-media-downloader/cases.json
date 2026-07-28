@@ -1,0 +1,36 @@
+[
+  {
+    "name": "抖音完整分享文案自动创建任务",
+    "prompt": "3.05 rEH:/ J@v.Fu 37度高温吃铜锅涮肉 https://v.douyin.com/f3hjTQpvACU/ 复制此链接，打开抖音搜索",
+    "must_use_tools": ["skill_run"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "YouTube Shorts 保持原始画质",
+    "prompt": "下载这个 Shorts：https://www.youtube.com/shorts/abcdefghijk",
+    "must_use_tools": ["skill_run"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "Telegram 未配置时不给群成员登录权限",
+    "prompt": "帮我下载 https://t.me/example/123",
+    "must_use_tools": ["skill_run"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "查询下载进度",
+    "prompt": "查询刚才那个下载任务的进度",
+    "must_use_tools": ["skill_run"]
+  },
+  {
+    "name": "继续发送只发下一段",
+    "prompt": "继续发送下一段",
+    "must_use_tools": ["skill_run", "send"]
+  },
+  {
+    "name": "拒绝无限频道下载",
+    "prompt": "把这个 YouTube 频道的全部历史视频都下载：https://www.youtube.com/@example/videos",
+    "must_contain": ["最多 20"],
+    "must_not_use_tools": ["send"]
+  }
+]

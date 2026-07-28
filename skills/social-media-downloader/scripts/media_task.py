@@ -17,7 +17,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -899,13 +899,33 @@ def _prepare_delivery(root: Path, task: dict[str, Any], media_dir: Path) -> None
     save_task(root, task)
 
 
+def _reuse_finished_single_download(root: Path, task: dict[str, Any], media_dir: Path) -> bool:
+    if int(task.get("requested_items") or 1) != 1:
+        return False
+    files = _finished_files(media_dir)
+    if not files:
+        return False
+    downloaded = sum(path.stat().st_size for path in files)
+    task["downloaded_bytes"] = downloaded
+    task["total_bytes"] = downloaded
+    task["progress_percent"] = 100.0
+    task["speed_bps"] = 0
+    task["eta_seconds"] = 0
+    task["last_error"] = None
+    task.pop("error_code", None)
+    save_task(root, task)
+    return True
+
+
 def _download_task(root: Path, task: dict[str, Any]) -> dict[str, Any]:
     if task.get("status") == "complete":
         return task
     media_dir = root / "media" / task["platform"] / task["media_id"]
     lock_name = hashlib.sha256(f"{task['platform']}:{task['media_id']}".encode()).hexdigest()
     with download_slot(root), exclusive_file(root / "locks" / f"media-{lock_name}.lock"):
-        if task["platform"] == "douyin":
+        if _reuse_finished_single_download(root, task, media_dir):
+            finished = True
+        elif task["platform"] == "douyin":
             finished = _download_douyin(root, task, media_dir)
             media_dir = root / "media" / "douyin" / task["media_id"]
         elif task["platform"] == "youtube":
@@ -1049,6 +1069,62 @@ def retry_delivery(arguments: list[str]) -> dict[str, Any]:
     return {**task, "file": str(path), "part_number": previous, "total_parts": len(parts), "message": f"{task['requester_label']} 的媒体，重发第 {previous}/{len(parts)} 段", "size_bytes": path.stat().st_size}
 
 
+def _other_task_needs_media(root: Path, task: dict[str, Any]) -> bool:
+    for task_file in (root / "tasks").glob("*.json"):
+        if task_file == _task_path(root, task["task_id"]):
+            continue
+        with contextlib.suppress(OSError, json.JSONDecodeError):
+            other = json.loads(task_file.read_text(encoding="utf-8"))
+            if other.get("platform") != task["platform"] or other.get("media_id") != task["media_id"]:
+                continue
+            if other.get("status") not in {"cancelled", "failed", "cleaned", "cleanup_pending"}:
+                return True
+    return False
+
+
+def confirm_delivery(arguments: list[str]) -> dict[str, Any]:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("task_id")
+    parser.add_argument("--delay-seconds", type=int, default=120)
+    parser.add_argument("--data-root")
+    args = parser.parse_args(arguments)
+    if not 0 <= args.delay_seconds <= 120:
+        raise TaskError("invalid_cleanup_delay", "清理等待时间必须在 0 到 120 秒之间")
+    root = data_root(args.data_root)
+    lock_path = root / "locks" / f"task-{args.task_id}.lock"
+    with exclusive_file(lock_path, stale_seconds=240):
+        task = load_task(root, args.task_id)
+        part = int(task.get("last_delivered_part") or 0)
+        total = int(task.get("total_parts") or 0)
+        if part < 1 or total < 1:
+            raise TaskError("nothing_to_confirm", "没有可确认的已发送文件")
+        confirmed = sorted({int(value) for value in task.get("confirmed_parts") or [] if str(value).isdigit()} | {part})
+        task["confirmed_parts"] = confirmed
+        task["last_delivery_confirmed_at"] = utc_now()
+        if confirmed != list(range(1, total + 1)):
+            save_task(root, task)
+            return {**task, "cleanup_scheduled": False, "cleanup_reason": "remaining_parts"}
+        task["status"] = "cleanup_pending"
+        task["cleanup_due_at"] = (datetime.now(timezone.utc) + timedelta(seconds=args.delay_seconds)).isoformat()
+        save_task(root, task)
+    if args.delay_seconds:
+        time.sleep(args.delay_seconds)
+    with exclusive_file(lock_path, stale_seconds=240):
+        task = load_task(root, args.task_id)
+        media_dir = root / "media" / task["platform"] / task["media_id"]
+        shared = _other_task_needs_media(root, task)
+        if not shared:
+            shutil.rmtree(media_dir, ignore_errors=True)
+        task["status"] = "cleaned"
+        task["original_files"] = []
+        task["delivery_parts"] = []
+        task["cleanup_completed_at"] = utc_now()
+        task["cleanup_deferred_for_shared_media"] = shared
+        task["last_error"] = None
+        save_task(root, task)
+        return {**task, "cleanup_scheduled": True, "media_deleted": not media_dir.exists(), "shared_media_retained": shared}
+
+
 def cancel_task(arguments: list[str]) -> dict[str, Any]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("task_id")
@@ -1101,6 +1177,7 @@ ACTIONS = {
     "task_status": task_status,
     "next_delivery": next_delivery,
     "retry_delivery": retry_delivery,
+    "confirm_delivery": confirm_delivery,
     "cancel_task": cancel_task,
     "telegram_status": telegram_status,
 }

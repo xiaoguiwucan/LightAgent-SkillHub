@@ -144,6 +144,55 @@ class MediaTaskTest(unittest.TestCase):
             self.assertIn("王五", delivered["message"])
             self.assertEqual(2, MODULE.load_task(root, task["task_id"])["next_part"])
 
+    def test_delivery_confirmation_cleans_media_after_final_part(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("telegram", "https://t.me/example/100", "用户", 1)
+            media_dir = root / "media" / "telegram" / task["media_id"]
+            media_dir.mkdir(parents=True)
+            media = media_dir / "message-100.mp4"
+            media.write_bytes(b"video")
+            task.update({"status": "complete", "delivery_parts": [str(media)], "total_parts": 1, "next_part": 2, "last_delivered_part": 1})
+            MODULE.save_task(root, task)
+            result = MODULE.confirm_delivery([task["task_id"], "--delay-seconds", "0", "--data-root", directory])
+        self.assertTrue(result["cleanup_scheduled"])
+        self.assertTrue(result["media_deleted"])
+        self.assertEqual("cleaned", result["status"])
+        self.assertEqual([], result["delivery_parts"])
+
+    def test_delivery_confirmation_waits_for_remaining_parts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("youtube", "https://youtu.be/abcdefghijk", "用户", 1)
+            media_dir = root / "media" / "youtube" / task["media_id"]
+            media_dir.mkdir(parents=True)
+            parts = [media_dir / "part-1.mp4", media_dir / "part-2.mp4"]
+            for part in parts:
+                part.write_bytes(b"video")
+            task.update({"status": "sending", "delivery_parts": [str(path) for path in parts], "total_parts": 2, "next_part": 2, "last_delivered_part": 1})
+            MODULE.save_task(root, task)
+            result = MODULE.confirm_delivery([task["task_id"], "--delay-seconds", "0", "--data-root", directory])
+            self.assertTrue(media_dir.exists())
+        self.assertFalse(result["cleanup_scheduled"])
+        self.assertEqual([1], result["confirmed_parts"])
+
+    def test_delivery_confirmation_retains_shared_media(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            first = MODULE._new_task("telegram", "https://t.me/example/100", "甲", 1)
+            second = MODULE._new_task("telegram", "https://t.me/example/100", "乙", 1)
+            media_dir = root / "media" / "telegram" / first["media_id"]
+            media_dir.mkdir(parents=True)
+            media = media_dir / "message-100.mp4"
+            media.write_bytes(b"video")
+            first.update({"status": "complete", "delivery_parts": [str(media)], "total_parts": 1, "next_part": 2, "last_delivered_part": 1})
+            second.update({"status": "ready", "delivery_parts": [str(media)], "total_parts": 1})
+            MODULE.save_task(root, first)
+            MODULE.save_task(root, second)
+            result = MODULE.confirm_delivery([first["task_id"], "--delay-seconds", "0", "--data-root", directory])
+            self.assertTrue(media.exists())
+        self.assertTrue(result["shared_media_retained"])
+
     def test_collection_limit_is_one_to_twenty(self):
         with patch.object(MODULE, "_download_task", side_effect=lambda root, task: task), tempfile.TemporaryDirectory() as directory, self.assertRaises(MODULE.TaskError) as caught:
             MODULE.prepare_media(["https://youtu.be/abcdefghijk", "用户", "21", "--data-root", directory])
@@ -223,6 +272,33 @@ class MediaTaskTest(unittest.TestCase):
                 MODULE.prepare_media(["https://t.me/example/100", "用户", "range:5", "--data-root", directory])
         self.assertEqual((1, False), (captured[0]["requested_items"], captured[0]["explicit_count"]))
         self.assertEqual((5, True), (captured[1]["requested_items"], captured[1]["explicit_count"]))
+
+    def test_single_task_reuses_finished_media_without_starting_downloader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("telegram", "https://t.me/example/100", "用户", 1)
+            media_dir = root / "media" / "telegram" / task["media_id"]
+            media_dir.mkdir(parents=True)
+            cached = media_dir / "message-100.mp4"
+            cached.write_bytes(b"cached-media")
+            MODULE.save_task(root, task)
+            with patch.object(MODULE, "_telegram_command", side_effect=AssertionError("缓存命中时不应启动下载器")) as downloader:
+                result = MODULE._download_task(root, task)
+            downloader.assert_not_called()
+        self.assertEqual("ready", result["status"])
+        self.assertEqual(12, result["downloaded_bytes"])
+        self.assertEqual([str(cached)], result["original_files"])
+
+    def test_range_task_does_not_reuse_partial_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = MODULE.data_root(directory)
+            task = MODULE._new_task("telegram", "https://t.me/example/100", "用户", 2)
+            media_dir = root / "media" / "telegram" / task["media_id"]
+            media_dir.mkdir(parents=True)
+            (media_dir / "message-100.mp4").write_bytes(b"partial-range")
+            with patch.object(MODULE, "_telegram_command", return_value=["tdl"]), patch.object(MODULE, "_run_resumable", return_value=False) as downloader:
+                MODULE._download_task(root, task)
+            downloader.assert_called_once()
 
     def test_resumable_downloader_reports_stdout_failure(self):
         with tempfile.TemporaryDirectory() as directory:

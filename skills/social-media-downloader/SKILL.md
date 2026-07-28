@@ -1,7 +1,7 @@
 ---
 name: social-media-downloader
 schema_version: 2
-version: 2.0.2
+version: 2.1.0
 description: >
   识别当前消息中的抖音、TikTok、YouTube 或 Telegram 链接，创建可续传下载任务并按群聊实测上限发送原始画质视频或原图。支持分享文案、短链接、图集、媒体组、Shorts、频道和播放列表；用户查询进度、继续下载、继续发送、重发上一段或取消任务时也必须使用。
 author: 风
@@ -16,10 +16,11 @@ tags: [douyin, tiktok, youtube, telegram, video, gallery, download]
 status: active
 publisher: community
 release_notes: |
-  修复 Telegram 单条消息被 Agent 默认数量 5 错误扩展为连续五条消息、其中一条不存在便导致整批失败的问题。
-  Telegram 单条链接现在固定下载当前消息；只有用户明确要求消息范围并传入 range:N 时才扩展，N 必须为 1 至 20。
-  TikTok 和 YouTube 遇到 TLS EOF、连接重置、超时、HTTP 429 或 5xx 等临时网络错误时，会在同一 Runner 内自动重试三轮并沿用断点。
-  下载器失败信息同时读取标准输出和错误输出，不再把 tdl 的具体原因丢失为“下载器返回失败”。
+  修复 Telegram 单条媒体已经下载到持久目录后，tdl 因 --skip-same 跳过重复文件并返回非零，技能却误报下载失败的问题。
+  单条任务现在会在启动下载器前复用同平台、同作品 ID 的已完成文件，并重新执行媒体校验、分段和发送准备。
+  Telegram range:N 等范围任务不会复用不完整缓存，仍按用户指定范围逐项下载。
+  新增发送成功确认和两分钟延迟清理：最后一段经 send 成功后调用 confirm_delivery，120 秒后删除下载原文件和分段文件。
+  多用户复用同一媒体时保留共享文件，直到所有相关任务均完成发送确认，避免提前删除其他用户待发送内容。
 breaking_changes: []
 requirements:
   env: []
@@ -74,6 +75,14 @@ lightagent:
       max_memory_mb: 256
       max_processes: 4
       arguments: {min_items: 1, max_items: 1, max_length: 128}
+    - name: confirm_delivery
+      path: scripts/confirm_delivery.py
+      runtime: python
+      timeout_seconds: 180
+      max_output_bytes: 65536
+      max_memory_mb: 256
+      max_processes: 4
+      arguments: {min_items: 1, max_items: 1, max_length: 128}
     - name: cancel_task
       path: scripts/cancel_task.py
       runtime: python
@@ -106,7 +115,7 @@ lightagent:
 
 单作品必须省略第三项。YouTube 频道或播放列表可在第三项传 `1` 至 `20`；Telegram 只有用户明确要求连续消息范围时才传 `range:N`，例如 `range:5`，禁止为单条消息传裸数字 `5`。分享文案必须逐字传入，不要由模型先提取、改写或脱敏 URL。
 
-- 返回 `status: ready` 且 `delivery_parts` 非空：立即调用 `next_delivery`，再把其 `file` 交给 `send`。发送说明使用入口返回的 `message`。
+- 返回 `status: ready` 且 `delivery_parts` 非空：立即调用 `next_delivery`，再把其 `file` 交给 `send`。发送说明使用入口返回的 `message`。只有 `send` 明确成功后才调用 `confirm_delivery`；发送失败时不得确认。
 - 返回 `status: ready` 但没有 `delivery_parts`：媒体已下载，但群发阈值尚未实测，不调用 `send`。
 - 返回 `status: download_pending`：说明本轮已保存断点，并告知任务 ID。用户可查询或继续。
 - 返回失败：原样区分链接、依赖、Telegram 登录、磁盘、平台解析和下载错误，不调用 `send`。
@@ -119,6 +128,7 @@ lightagent:
 - “继续下载”：调用 `continue_download`。Runner 单轮上限为 600 秒，技能会在 540 秒主动保存断点；不得启动后台守护进程规避限制。
 - “继续发送”：调用 `next_delivery`，每轮只将一个 `file` 交给 `send`。文件名和说明会标识提问人与第 X/N 段。
 - “重发上一段”：调用 `retry_delivery`，再发送其 `file`。
+- 每次 `send` 成功后立即调用 `confirm_delivery`。中间分段只记录确认并立即返回；最后一段确认后入口等待 120 秒，删除下载原文件和全部分段文件。不得在 `send` 失败时调用。
 - “取消下载”：调用 `cancel_task`。取消会删除该媒体任务的临时和下载文件。
 
 任务 ID 必须来自本次会话的入口返回结果，不猜测、不枚举其他用户任务。

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "分享文案自动触发并发送",
+    "prompt": "3.05 rEH:/ J@v.Fu 04/17 :6pm 37度高温在家开16度的空调吃铜锅涮肉是什么体验 # 铜锅涮肉 # 自制羊肉卷 # 贵州珍酒 # 茅台姊妹酒 https://v.douyin.com/f3hjTQpvACU/ 复制此链接，打开Dou音搜索，直接观看视频！",
+    "must_contain": ["视频已发送"],
+    "must_use_tools": ["skill_run", "send"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "完整视频页链接",
+    "prompt": "https://www.douyin.com/video/7665953748267482341",
+    "must_use_tools": ["skill_run", "send"],
+    "must_not_use_tools": ["browser", "web_fetch", "bash"]
+  },
+  {
+    "name": "主页不属于单视频",
+    "prompt": "帮我下载 https://www.douyin.com/user/example 的全部视频",
+    "must_contain": ["只支持单个视频"],
+    "must_not_use_tools": ["send"]
+  },
+  {
+    "name": "非抖音链接不处理",
+    "prompt": "下载 https://example.com/video.mp4",
+    "must_not_use_tools": ["skill_run", "send"]
+  }
+]

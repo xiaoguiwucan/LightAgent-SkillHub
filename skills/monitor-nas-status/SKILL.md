@@ -1,7 +1,7 @@
 ---
 name: monitor-nas-status
 schema_version: 2
-version: 1.0.1
+version: 1.1.0
 description: >
   通过只读 SSH 查看一台或多台 NAS 的运行健康状态，兼容飞牛 fnOS、群晖 DSM、极空间、绿联 UGOS Pro 和通用 Linux NAS。用户询问 NAS 是否在线、CPU、内存、负载、温度、运行时间、存储空间、RAID、Docker 或服务状态时使用。
 author: 风
@@ -16,8 +16,8 @@ tags: [nas, monitoring, fnos, synology, zspace, ugreen, raid, docker]
 status: active
 publisher: community
 release_notes: |
-  修复将 ssh 作为普通命令依赖导致旧镜像安装失败的问题，改用稳定的 nas-monitoring 系统能力声明。
-  支持读取 LightAgent Web 控制台保存的多设备配置、私钥和连接超时，环境变量配置继续兼容。
+  NAS 登录默认改为 SSH 账号密码，私钥和 SSH Agent 继续兼容。
+  密码从独立的 0600 敏感文件读取，并通过 sshpass 子进程环境传递，不进入命令行参数、API 或日志。
 breaking_changes: []
 requirements:
   env:
@@ -26,6 +26,8 @@ requirements:
     - NAS_MONITOR_NAME
     - NAS_MONITOR_USER
     - NAS_MONITOR_PORT
+    - NAS_MONITOR_AUTH_TYPE
+    - NAS_MONITOR_PASSWORD
     - NAS_MONITOR_KEY_PATH
     - NAS_MONITOR_PLATFORM
     - NAS_MONITOR_TIMEOUT_SECONDS
@@ -39,7 +41,7 @@ lightagent:
   network_domains: [<configured-nas>]
   file_paths: [<skill_config>, <configured-key-path>]
   tools: [skill_run]
-  docker_notes: 使用 lightagent-ipad 最新镜像，或通过 SKILL_CAPABILITY_PACKS=nas 构建包含 OpenSSH 客户端的镜像。技能以非 root 用户运行，不安装系统包。
+  docker_notes: 使用 lightagent-ipad 最新镜像，或通过 SKILL_CAPABILITY_PACKS=nas 构建包含 OpenSSH 和 sshpass 的镜像。技能以非 root 用户运行，不安装系统包。
   entrypoints:
     - name: status
       path: scripts/status.py
@@ -81,7 +83,7 @@ lightagent:
 
 ## 管理员配置
 
-在 LightAgent Web 控制台的“技能”页面找到本技能，点击“NAS 配置”即可新增多台设备、导入私钥、测试连接并查看状态。页面不回显私钥，配置和密钥分别以 `0600` 权限保存在技能的 `<skill_config>` 持久化目录中。
+在 LightAgent Web 控制台的“技能”页面找到本技能，点击“NAS 配置”即可新增多台设备。默认填写 SSH 账号和密码，也可以选择私钥或 SSH Agent。密码单独写入 `<skill_config>/secrets.json` 并固定为 `0600` 权限，页面和 API 只显示“已保存”状态，不回显密码。
 
 无 Web 控制台的部署也可以配置 `NAS_MONITOR_TARGETS`：
 
@@ -108,7 +110,7 @@ lightagent:
 
 单设备也可使用 `NAS_MONITOR_HOST`、`NAS_MONITOR_USER`、`NAS_MONITOR_PORT`、`NAS_MONITOR_KEY_PATH`、`NAS_MONITOR_NAME` 和 `NAS_MONITOR_PLATFORM`。平台可填 `auto`、`fnos`、`synology`、`zspace`、`ugreen` 或 `linux`。
 
-使用只读 SSH 专用账号和无口令私钥，或由管理员配置 `SSH_AUTH_SOCK`。私钥应放入该技能的 `<skill_config>` 目录并设置为 `0600`；不得把 NAS 密码、私钥或 SSH Agent 地址发到群聊、写入技能文件或提交到仓库。
+使用只读 SSH 专用账号。密码通过 `sshpass -e` 的子进程环境传递，不出现在命令行参数中；无口令私钥和 `SSH_AUTH_SOCK` 继续作为可选方式。不得把 NAS 密码、私钥或 SSH Agent 地址发到群聊、写入技能文件或提交到仓库。
 
 第一次连接会记录 NAS 主机密钥，后续主机密钥变化时拒绝连接。管理员核实设备身份前不得删除或替换记录来绕过检查。
 

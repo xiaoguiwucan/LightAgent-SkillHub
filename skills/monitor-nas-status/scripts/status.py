@@ -15,6 +15,7 @@ from typing import Any
 
 
 VALID_PLATFORMS = {"auto", "fnos", "synology", "zspace", "ugreen", "linux"}
+VALID_AUTH_TYPES = {"password", "private_key", "ssh_agent"}
 HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,253}$")
 USER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
@@ -96,6 +97,8 @@ class Target:
     host: str
     user: str
     port: int = 22
+    auth_type: str = "password"
+    password: str = ""
     key_path: str = ""
     platform: str = "auto"
 
@@ -121,6 +124,11 @@ def _target_from_mapping(value: dict[str, Any], index: int) -> Target:
     platform = str(value.get("platform") or "auto").strip().lower()
     port = _as_int(value.get("port"), 22)
     key_path = str(value.get("key_path") or "").strip()
+    password = str(value.get("password") or "")
+    auth_type = str(
+        value.get("auth_type")
+        or ("private_key" if key_path else "password" if password else "ssh_agent")
+    ).strip().lower()
 
     if not HOST_RE.fullmatch(host) or host.startswith("-"):
         raise ValueError(f"target {name!r} has an invalid host")
@@ -132,12 +140,25 @@ def _target_from_mapping(value: dict[str, Any], index: int) -> Target:
         raise ValueError(f"target {name!r} has an invalid SSH port")
     if platform not in VALID_PLATFORMS:
         raise ValueError(f"target {name!r} has unsupported platform {platform!r}")
+    if auth_type not in VALID_AUTH_TYPES:
+        raise ValueError(f"target {name!r} has unsupported SSH authentication {auth_type!r}")
+    if auth_type == "password" and not password:
+        raise ValueError(f"target {name!r} has no SSH password")
     if key_path:
         key = Path(key_path).expanduser()
         if not key.is_absolute():
             raise ValueError(f"target {name!r} key_path must be absolute")
         key_path = str(key)
-    return Target(name=name, host=host, user=user, port=port, key_path=key_path, platform=platform)
+    return Target(
+        name=name,
+        host=host,
+        user=user,
+        port=port,
+        auth_type=auth_type,
+        password=password,
+        key_path=key_path,
+        platform=platform,
+    )
 
 
 def _config_dir(create: bool = True) -> Path:
@@ -165,6 +186,24 @@ def load_saved_config() -> dict[str, Any]:
     return value
 
 
+def load_saved_passwords() -> dict[str, str]:
+    path = _config_dir(create=False) / "secrets.json"
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("saved NAS monitor secrets are invalid") from exc
+    passwords = value.get("passwords", {}) if isinstance(value, dict) else {}
+    if not isinstance(passwords, dict):
+        raise ValueError("saved NAS monitor secrets must contain a passwords object")
+    return {
+        str(target_id): str(password)
+        for target_id, password in passwords.items()
+        if isinstance(password, str) and password
+    }
+
+
 def load_targets(env: dict[str, str] | None = None) -> list[Target]:
     env = env or dict(os.environ)
     raw = str(env.get("NAS_MONITOR_TARGETS") or "").strip()
@@ -182,7 +221,13 @@ def load_targets(env: dict[str, str] | None = None) -> list[Target]:
         if saved_targets:
             if not isinstance(saved_targets, list) or not all(isinstance(item, dict) for item in saved_targets):
                 raise ValueError("saved NAS monitor targets must be an array of objects")
-            values = saved_targets
+            passwords = load_saved_passwords()
+            values = []
+            for saved_target in saved_targets:
+                target = dict(saved_target)
+                if target.get("auth_type") == "password":
+                    target["password"] = passwords.get(str(target.get("id") or ""), "")
+                values.append(target)
         else:
             values = []
         host = str(env.get("NAS_MONITOR_HOST") or "").strip()
@@ -192,6 +237,10 @@ def load_targets(env: dict[str, str] | None = None) -> list[Target]:
                 "name": env.get("NAS_MONITOR_NAME") or host,
                 "user": env.get("NAS_MONITOR_USER") or "",
                 "port": env.get("NAS_MONITOR_PORT") or 22,
+                "auth_type": env.get("NAS_MONITOR_AUTH_TYPE") or (
+                    "private_key" if env.get("NAS_MONITOR_KEY_PATH") else "password"
+                ),
+                "password": env.get("NAS_MONITOR_PASSWORD") or "",
                 "key_path": env.get("NAS_MONITOR_KEY_PATH") or "",
                 "platform": env.get("NAS_MONITOR_PLATFORM") or "auto",
             }]
@@ -202,12 +251,18 @@ def load_targets(env: dict[str, str] | None = None) -> list[Target]:
     if len(names) != len(set(names)):
         raise ValueError("NAS target names must be unique")
     return targets
+
+
 def build_ssh_command(target: Target, known_hosts: Path, timeout: int) -> list[str]:
-    command = [
-        "ssh", "-F", os.devnull,
-        "-o", "BatchMode=yes",
-        "-o", "PasswordAuthentication=no",
-        "-o", "KbdInteractiveAuthentication=no",
+    password_auth = target.auth_type == "password"
+    command = (["sshpass", "-e", "ssh"] if password_auth else ["ssh"])
+    command.extend([
+        "-F", os.devnull,
+        "-o", f"BatchMode={'no' if password_auth else 'yes'}",
+        "-o", f"PasswordAuthentication={'yes' if password_auth else 'no'}",
+        "-o", f"KbdInteractiveAuthentication={'yes' if password_auth else 'no'}",
+        "-o", f"PubkeyAuthentication={'no' if password_auth else 'yes'}",
+        "-o", "NumberOfPasswordPrompts=1",
         "-o", f"ConnectTimeout={timeout}",
         "-o", "ConnectionAttempts=1",
         "-o", "StrictHostKeyChecking=accept-new",
@@ -215,19 +270,19 @@ def build_ssh_command(target: Target, known_hosts: Path, timeout: int) -> list[s
         "-o", f"UserKnownHostsFile={known_hosts}",
         "-o", "LogLevel=ERROR",
         "-p", str(target.port),
-    ]
+    ])
     if target.key_path:
         command.extend(["-o", "IdentitiesOnly=yes", "-i", target.key_path])
     command.extend([f"{target.user}@{target.host}", "sh", "-s"])
     return command
 
 
-def _friendly_ssh_error(stderr: str) -> str:
+def _friendly_ssh_error(stderr: str, auth_type: str) -> str:
     lowered = stderr.lower()
     if "remote host identification has changed" in lowered or "host key verification failed" in lowered:
         return "SSH host key verification failed; verify the NAS identity before changing the pinned key"
     if "permission denied" in lowered or "authentication failed" in lowered:
-        return "SSH key authentication failed"
+        return "SSH password authentication failed" if auth_type == "password" else "SSH key authentication failed"
     if "connection refused" in lowered:
         return "SSH connection was refused; verify that SSH is enabled and the configured port is correct"
     if "timed out" in lowered or "no route to host" in lowered or "network is unreachable" in lowered:
@@ -243,17 +298,23 @@ def collect_remote(target: Target, timeout: int) -> str:
         if not key.is_file():
             raise RuntimeError("configured SSH private key is unavailable inside LightAgent")
     command = build_ssh_command(target, known_hosts, timeout)
+    process_env = None
+    if target.auth_type == "password":
+        process_env = dict(os.environ)
+        process_env["SSHPASS"] = target.password
     try:
         completed = subprocess.run(
             command,
             input=REMOTE_SCRIPT,
             text=True,
             capture_output=True,
+            env=process_env,
             timeout=max(10, timeout + 20),
             check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("OpenSSH client is not installed in the LightAgent runtime") from exc
+        missing = "sshpass" if target.auth_type == "password" else "OpenSSH client"
+        raise RuntimeError(f"{missing} is not installed in the LightAgent runtime") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("NAS status collection timed out") from exc
     if known_hosts.exists():
@@ -262,7 +323,7 @@ def collect_remote(target: Target, timeout: int) -> str:
         except OSError:
             pass
     if completed.returncode != 0:
-        raise RuntimeError(_friendly_ssh_error(completed.stderr))
+        raise RuntimeError(_friendly_ssh_error(completed.stderr, target.auth_type))
     if not completed.stdout.startswith("NASMON|1\n"):
         raise RuntimeError("NAS returned an invalid status payload")
     return completed.stdout

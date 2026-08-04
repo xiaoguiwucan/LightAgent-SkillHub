@@ -1,0 +1,4 @@
+interface:
+  display_name: "NAS 运行监控"
+  short_description: "查看群晖、飞牛、极空间与绿联 NAS 的系统运行和存储健康状态"
+  default_prompt: "Use $monitor-nas-status to check the configured NAS health and summarize any alerts."

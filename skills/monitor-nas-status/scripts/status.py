@@ -140,6 +140,31 @@ def _target_from_mapping(value: dict[str, Any], index: int) -> Target:
     return Target(name=name, host=host, user=user, port=port, key_path=key_path, platform=platform)
 
 
+def _config_dir(create: bool = True) -> Path:
+    configured = str(os.environ.get("LIGHTAGENT_SKILL_CONFIG") or "").strip()
+    path = Path(configured) if configured else Path.home() / ".lightagent" / "skill-config" / "monitor-nas-status"
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)
+        except OSError:
+            pass
+    return path
+
+
+def load_saved_config() -> dict[str, Any]:
+    path = _config_dir(create=False) / "config.json"
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("saved NAS monitor configuration is invalid") from exc
+    if not isinstance(value, dict):
+        raise ValueError("saved NAS monitor configuration must be an object")
+    return value
+
+
 def load_targets(env: dict[str, str] | None = None) -> list[Target]:
     env = env or dict(os.environ)
     raw = str(env.get("NAS_MONITOR_TARGETS") or "").strip()
@@ -153,35 +178,30 @@ def load_targets(env: dict[str, str] | None = None) -> list[Target]:
         if not isinstance(values, list) or not values or not all(isinstance(item, dict) for item in values):
             raise ValueError("NAS_MONITOR_TARGETS must be a non-empty object or array of objects")
     else:
+        saved_targets = load_saved_config().get("targets", [])
+        if saved_targets:
+            if not isinstance(saved_targets, list) or not all(isinstance(item, dict) for item in saved_targets):
+                raise ValueError("saved NAS monitor targets must be an array of objects")
+            values = saved_targets
+        else:
+            values = []
         host = str(env.get("NAS_MONITOR_HOST") or "").strip()
-        if not host:
+        if host:
+            values = [{
+                "host": host,
+                "name": env.get("NAS_MONITOR_NAME") or host,
+                "user": env.get("NAS_MONITOR_USER") or "",
+                "port": env.get("NAS_MONITOR_PORT") or 22,
+                "key_path": env.get("NAS_MONITOR_KEY_PATH") or "",
+                "platform": env.get("NAS_MONITOR_PLATFORM") or "auto",
+            }]
+        if not values:
             raise ValueError("configure NAS_MONITOR_TARGETS or NAS_MONITOR_HOST first")
-        values = [{
-            "host": host,
-            "name": env.get("NAS_MONITOR_NAME") or host,
-            "user": env.get("NAS_MONITOR_USER") or "",
-            "port": env.get("NAS_MONITOR_PORT") or 22,
-            "key_path": env.get("NAS_MONITOR_KEY_PATH") or "",
-            "platform": env.get("NAS_MONITOR_PLATFORM") or "auto",
-        }]
     targets = [_target_from_mapping(item, index) for index, item in enumerate(values)]
     names = [target.name for target in targets]
     if len(names) != len(set(names)):
         raise ValueError("NAS target names must be unique")
     return targets
-
-
-def _config_dir() -> Path:
-    configured = str(os.environ.get("LIGHTAGENT_SKILL_CONFIG") or "").strip()
-    path = Path(configured) if configured else Path.home() / ".lightagent" / "skill-config" / "monitor-nas-status"
-    path.mkdir(parents=True, exist_ok=True)
-    try:
-        path.chmod(0o700)
-    except OSError:
-        pass
-    return path
-
-
 def build_ssh_command(target: Target, known_hosts: Path, timeout: int) -> list[str]:
     command = [
         "ssh", "-F", os.devnull,
@@ -508,7 +528,8 @@ def main(argv: list[str] | None = None) -> int:
         if not targets:
             print(json.dumps({"error": "requested NAS target is not configured"}, ensure_ascii=False))
             return 2
-    timeout = max(3, min(30, _as_int(os.environ.get("NAS_MONITOR_TIMEOUT_SECONDS"), 8)))
+    saved_timeout = load_saved_config().get("timeout_seconds", 8)
+    timeout = max(3, min(30, _as_int(os.environ.get("NAS_MONITOR_TIMEOUT_SECONDS"), saved_timeout)))
     reports = [collect_target(target, timeout) for target in targets]
     rank = {"healthy": 0, "warning": 1, "critical": 2}
     overall = max((report["status"] for report in reports), key=lambda value: rank[value])

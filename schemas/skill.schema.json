@@ -30,7 +30,7 @@
         "python": {"type": "array", "items": {"type": "string"}},
         "npm": {"type": "array", "items": {"type": "string"}},
         "downloads": {"type": "array", "items": {"type": "object", "required": ["url", "sha256"], "properties": {"url": {"type": "string", "pattern": "^https://"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}}},
-        "capabilities": {"type": "array", "items": {"enum": ["office-documents", "media-processing", "browser-automation"]}, "uniqueItems": true}
+        "capabilities": {"type": "array", "items": {"enum": ["office-documents", "media-processing", "browser-automation", "nas-monitoring"]}, "uniqueItems": true}
       },
       "additionalProperties": false
     },

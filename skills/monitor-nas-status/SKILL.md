@@ -1,7 +1,7 @@
 ---
 name: monitor-nas-status
 schema_version: 2
-version: 1.0.0
+version: 1.0.1
 description: >
   通过只读 SSH 查看一台或多台 NAS 的运行健康状态，兼容飞牛 fnOS、群晖 DSM、极空间、绿联 UGOS Pro 和通用 Linux NAS。用户询问 NAS 是否在线、CPU、内存、负载、温度、运行时间、存储空间、RAID、Docker 或服务状态时使用。
 author: 风
@@ -16,8 +16,8 @@ tags: [nas, monitoring, fnos, synology, zspace, ugreen, raid, docker]
 status: active
 publisher: community
 release_notes: |
-  首次发布。支持多 NAS、平台自动识别、系统资源、持久化存储、md RAID、Docker、常见服务和分级告警。
-  使用固定只读采集脚本、SSH 密钥认证和主机密钥固定，不执行用户提供的远程命令。
+  修复将 ssh 作为普通命令依赖导致旧镜像安装失败的问题，改用稳定的 nas-monitoring 系统能力声明。
+  支持读取 LightAgent Web 控制台保存的多设备配置、私钥和连接超时，环境变量配置继续兼容。
 breaking_changes: []
 requirements:
   env:
@@ -30,16 +30,16 @@ requirements:
     - NAS_MONITOR_PLATFORM
     - NAS_MONITOR_TIMEOUT_SECONDS
     - SSH_AUTH_SOCK
-  bins: [ssh]
+  bins: []
   python: []
   npm: []
   downloads: []
-  capabilities: []
+  capabilities: [nas-monitoring]
 lightagent:
   network_domains: [<configured-nas>]
   file_paths: [<skill_config>, <configured-key-path>]
   tools: [skill_run]
-  docker_notes: lightagent-ipad 最新镜像已包含 OpenSSH 客户端；其他镜像需要预装 ssh 命令。技能以非 root 用户运行，不安装系统包。
+  docker_notes: 使用 lightagent-ipad 最新镜像，或通过 SKILL_CAPABILITY_PACKS=nas 构建包含 OpenSSH 客户端的镜像。技能以非 root 用户运行，不安装系统包。
   entrypoints:
     - name: status
       path: scripts/status.py
@@ -81,7 +81,9 @@ lightagent:
 
 ## 管理员配置
 
-多设备优先配置 `NAS_MONITOR_TARGETS`：
+在 LightAgent Web 控制台的“技能”页面找到本技能，点击“NAS 配置”即可新增多台设备、导入私钥、测试连接并查看状态。页面不回显私钥，配置和密钥分别以 `0600` 权限保存在技能的 `<skill_config>` 持久化目录中。
+
+无 Web 控制台的部署也可以配置 `NAS_MONITOR_TARGETS`：
 
 ```json
 [

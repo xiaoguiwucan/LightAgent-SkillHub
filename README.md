@@ -20,6 +20,7 @@ LightAgent Web 控制台的“技能 -> 获取在线技能”可直接浏览、�
 
 ## 已收录技能
 
+- `sub2api-usage` `1.0.0`：查询 Sub2API 总体及各账号今日、本周、本月 Token、今日请求、占比、用量高峰、预估和周池额度，统一使用当前 Sub2API 用户名。
 - `monitor-nas-status` `1.1.0`：通过只读 SSH 查看飞牛 fnOS、群晖 DSM、极空间、绿联 UGOS Pro 和通用 Linux NAS 的系统资源、存储、RAID、Docker、服务状态与分级告警；支持 LightAgent Web 账号密码可视化配置，私钥和 SSH Agent 继续兼容。
 - `social-media-downloader` `2.1.0`：统一下载抖音、TikTok、YouTube 和 Telegram 视频或图集，支持原始画质、缓存复用、临时网络错误重试、断点续传、无损分段、发送后两分钟清理、进度查询及 Telegram 登录会话。
 - `douyin-video-share` `1.0.0`：自动识别当前消息中的单个抖音公开视频分享链接，通过 Skill Runner 安全下载并发送回原 Web 或微信群会话。

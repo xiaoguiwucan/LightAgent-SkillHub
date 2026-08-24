@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sub2API 用量查询"
+  short_description: "查询 Sub2API 各账号用量、排行、高峰时段与周池额度"
+  default_prompt: "Use $sub2api-usage to query the current Sub2API usage and send the formatted text report."
+policy:
+  allow_implicit_invocation: true

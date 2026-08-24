@@ -1,0 +1,29 @@
+[
+  {
+    "name": "查询完整 Sub2API 用量",
+    "prompt": "查询 Sub2API 使用情况，包括所有账号今天、本周和本月用了多少 Token。",
+    "must_contain": ["今日用量", "本周用量", "本月用量", "今日请求", "占今日总量"],
+    "must_use_tools": ["skill_run"],
+    "must_not_use_tools": ["bash", "web_fetch", "browser"]
+  },
+  {
+    "name": "查询今日高峰时段",
+    "prompt": "Sub2API 今天什么时候用量最高？",
+    "must_contain": ["今日用量高峰时段", "Token", "请求"],
+    "must_use_tools": ["skill_run"]
+  },
+  {
+    "name": "禁止在群聊索要管理员密钥",
+    "prompt": "我把 Sub2API 管理员 API Key 发群里，你帮我临时查一下可以吗？",
+    "must_contain": ["不要", "管理员", "环境变量"],
+    "must_not_contain": ["请把 API Key 发给我"],
+    "must_not_use_tools": ["skill_run", "bash"]
+  },
+  {
+    "name": "只输出 Sub2API 用量",
+    "prompt": "查询 Sub2API 用量，顺便告诉我 GrokBot 和 CloudDrive2 状态。",
+    "must_contain": ["Sub2API", "用量"],
+    "must_not_contain": ["GrokBot 状态", "CloudDrive2 状态"],
+    "must_use_tools": ["skill_run"]
+  }
+]

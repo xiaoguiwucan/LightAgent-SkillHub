@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
 from urllib import request
@@ -20,6 +19,7 @@ DEFAULT_TIMEOUT_SECONDS = 8
 MAX_RESPONSE_BYTES = 512 * 1024
 ADMIN_PAGE_SIZE = 200
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+DEFAULT_REPORT_TIMEZONE = "Asia/Shanghai"
 
 
 class StatusError(RuntimeError):
@@ -80,7 +80,7 @@ def _format_box(box: dict[str, Any], compact: bool, require_ok: bool = True) -> 
     return formatter(box.get("tokens"))
 
 
-def _parse_time(value: Any) -> datetime | None:
+def _parse_time(value: Any, timezone: ZoneInfo = SHANGHAI) -> datetime | None:
     text = str(value or "").strip()
     if not text:
         return None
@@ -88,16 +88,20 @@ def _parse_time(value: Any) -> datetime | None:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         try:
-            parsed = datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=SHANGHAI)
+            parsed = datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=timezone)
         except ValueError:
             return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=SHANGHAI)
-    return parsed.astimezone(SHANGHAI)
+        parsed = parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
 
 
-def _format_time(value: Any, include_year: bool = False) -> str:
-    parsed = _parse_time(value)
+def _format_time(
+    value: Any,
+    include_year: bool = False,
+    timezone: ZoneInfo = SHANGHAI,
+) -> str:
+    parsed = _parse_time(value, timezone=timezone)
     if parsed is None:
         return "--"
     return parsed.strftime("%Y-%m-%d %H:%M" if include_year else "%m-%d %H:%M")
@@ -305,10 +309,23 @@ def render_status(payload: dict[str, Any], admin_report: dict[str, Any] | None =
     reset_at = _format_time(week_pool.get("reset_at")) if pool_ok else "--"
     hours_left = _format_hours(week_pool.get("hours_left")) if pool_ok else "--"
 
+    report_timezone_name = str(
+        admin_report.get("report_timezone") if isinstance(admin_report, dict) else ""
+    ).strip()
+    try:
+        report_timezone = ZoneInfo(report_timezone_name) if report_timezone_name else SHANGHAI
+    except (KeyError, ValueError):
+        report_timezone = SHANGHAI
+        report_timezone_name = DEFAULT_REPORT_TIMEZONE
+    report_time = (
+        admin_report.get("report_time") if isinstance(admin_report, dict) else None
+    ) or payload.get("ts")
+    timezone_label = "北京时间" if report_timezone_name == DEFAULT_REPORT_TIMEZONE else report_timezone_name
+
     lines = [
         "📊 Sub2API 用量分析",
         "━━━━━━━━━━━━━━━━",
-        f"🕒 数据更新：{_format_time(payload.get('ts'), include_year=True)}（北京时间）",
+        f"🕒 数据更新：{_format_time(report_time, include_year=True, timezone=report_timezone)}（{timezone_label}）",
         "",
         "📈 总体用量",
         f"今日用量：{today_tokens} Token",
@@ -458,14 +475,15 @@ def fetch_admin_report(
     api_key: str,
     timeout_seconds: int,
     now: datetime | None = None,
+    report_timezone: ZoneInfo = SHANGHAI,
 ) -> dict[str, Any]:
     if not api_key.strip():
         raise StatusError("Sub2API 成员统计密钥未配置")
-    current = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
+    current = (now or datetime.now(report_timezone)).astimezone(report_timezone)
     today = current.date()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
-    common = {"end_date": today.isoformat(), "timezone": "Asia/Shanghai"}
+    common = {"end_date": today.isoformat(), "timezone": report_timezone.key}
     requests = {
         "users": _admin_endpoint(base_url, "/admin/users", {
             "page": 1,
@@ -499,23 +517,24 @@ def fetch_admin_report(
     }
     headers = {"x-api-key": api_key.strip()}
     try:
-        with ThreadPoolExecutor(max_workers=len(requests)) as executor:
-            futures = {
-                name: executor.submit(_fetch_json, url, timeout_seconds, headers)
-                for name, url in requests.items()
-            }
-            payloads = {name: future.result() for name, future in futures.items()}
+        payloads = {
+            name: _fetch_json(url, timeout_seconds, headers)
+            for name, url in requests.items()
+        }
     except Exception as exc:
         if isinstance(exc, StatusError):
             raise
         raise StatusError("无法读取 Sub2API 成员用量，请稍后重试") from exc
-    return build_admin_report(
+    report = build_admin_report(
         payloads["users"],
         payloads["today"],
         payloads["week"],
         payloads["month"],
         payloads["trend"],
     )
+    report["report_time"] = current.isoformat()
+    report["report_timezone"] = report_timezone.key
+    return report
 
 
 def main() -> int:
@@ -524,15 +543,23 @@ def main() -> int:
         os.getenv("SUB2API_ADMIN_BASE_URL") or DEFAULT_ADMIN_BASE_URL
     ).strip()
     admin_api_key = str(os.getenv("SUB2API_ADMIN_API_KEY") or "").strip()
+    report_timezone_name = str(
+        os.getenv("SUB2API_REPORT_TIMEZONE") or DEFAULT_REPORT_TIMEZONE
+    ).strip()
     timeout_seconds = _clamp_integer(
         os.getenv("SUB2API_STATUS_TIMEOUT_SECONDS"), 1, 30, DEFAULT_TIMEOUT_SECONDS
     )
     try:
+        try:
+            report_timezone = ZoneInfo(report_timezone_name)
+        except (KeyError, ValueError) as exc:
+            raise StatusError("Sub2API 统计时区配置无效") from exc
         payload = fetch_status(status_url, timeout_seconds)
         admin_report = fetch_admin_report(
             admin_base_url,
             admin_api_key,
             timeout_seconds,
+            report_timezone=report_timezone,
         )
         data = _selected_data(payload)
         data["members"] = admin_report.get("members", [])

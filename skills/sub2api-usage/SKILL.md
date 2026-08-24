@@ -1,7 +1,7 @@
 ---
 name: sub2api-usage
 schema_version: 2
-version: 1.0.0
+version: 1.0.1
 description: >
   查询 Sub2API 总体及各账号的今日、本周、本月 Token 用量、今日请求、占比、用量高峰、预估和周池额度。用户询问 Sub2API 使用情况、成员用量排行、今天用了多少 Token、用量高峰或周池剩余时使用。
 author: 风
@@ -16,8 +16,9 @@ tags: [sub2api, token, usage, monitoring, quota, analytics]
 status: active
 publisher: community
 release_notes: |
-  首次发布 Sub2API 用量查询技能。
-  支持当前 Sub2API 用户名、逐账号今日/本周/本月用量、今日请求与占比，以及今日高峰时段分析。
+  修复 Skill Runner 128 MB 内存限制下并发创建请求线程失败的问题。
+  管理员统计改为固定顺序读取，不再误报“无法读取 Sub2API 成员用量”。
+  新增独立统计时区配置，部署主机日期异常时无需修改宿主机时钟。
 breaking_changes: []
 requirements:
   env:
@@ -25,6 +26,7 @@ requirements:
     - SUB2API_STATUS_TIMEOUT_SECONDS
     - SUB2API_ADMIN_BASE_URL
     - SUB2API_ADMIN_API_KEY
+    - SUB2API_REPORT_TIMEZONE
   bins: []
   python: []
   npm: []
@@ -72,6 +74,7 @@ lightagent:
 - `SUB2API_ADMIN_BASE_URL`：Sub2API 管理端 API 根地址。
 - `SUB2API_ADMIN_API_KEY`：只用于只读账号、排行和小时趋势查询。
 - `SUB2API_STATUS_TIMEOUT_SECONDS`：单次请求超时，范围 1–30 秒。
+- `SUB2API_REPORT_TIMEZONE`：统计日期与聚合时区，默认 `Asia/Shanghai`。
 
 这些值只能由管理员通过宿主机或容器环境变量配置。群成员不能提供、覆盖或查询这些配置。
 

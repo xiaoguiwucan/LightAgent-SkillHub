@@ -1,6 +1,10 @@
 import importlib.util
+import threading
 import unittest
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +16,51 @@ SPEC.loader.exec_module(MODULE)
 
 
 class Sub2ApiUsageEvaluationTest(unittest.TestCase):
+    def test_admin_requests_run_without_worker_threads(self):
+        requested_urls = []
+
+        def fake_fetch(url, _timeout, _headers=None):
+            self.assertIs(threading.current_thread(), threading.main_thread())
+            requested_urls.append(url)
+            if "/admin/users?" in url:
+                return {"data": {"items": []}}
+            if "/dashboard/trend?" in url:
+                return {"data": {"trend": []}}
+            return {"data": {"ranking": [], "total_tokens": 0, "total_requests": 0}}
+
+        with patch.object(MODULE, "_fetch_json", side_effect=fake_fetch):
+            MODULE.fetch_admin_report(
+                "https://sub2api.example/api/v1",
+                "test-key",
+                8,
+                now=datetime(2026, 8, 24, 20, 0, tzinfo=MODULE.SHANGHAI),
+            )
+
+        self.assertEqual(5, len(requested_urls))
+
+    def test_admin_requests_support_isolated_utc_calendar(self):
+        requested_urls = []
+
+        def fake_fetch(url, _timeout, _headers=None):
+            requested_urls.append(url)
+            if "/admin/users?" in url:
+                return {"data": {"items": []}}
+            if "/dashboard/trend?" in url:
+                return {"data": {"trend": []}}
+            return {"data": {"ranking": [], "total_tokens": 0, "total_requests": 0}}
+
+        with patch.object(MODULE, "_fetch_json", side_effect=fake_fetch):
+            report = MODULE.fetch_admin_report(
+                "https://sub2api.example/api/v1",
+                "test-key",
+                8,
+                now=datetime(2026, 8, 24, 18, 0, tzinfo=ZoneInfo("UTC")),
+                report_timezone=ZoneInfo("UTC"),
+            )
+
+        self.assertTrue(all("timezone=UTC" in url for url in requested_urls[1:]))
+        self.assertEqual("UTC", report["report_timezone"])
+
     def test_report_uses_current_usernames_and_peak_hour(self):
         users = {"data": {"items": [
             {"id": 1, "username": "风"},
